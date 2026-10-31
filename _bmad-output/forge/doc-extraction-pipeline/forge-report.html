@@ -1,0 +1,277 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Forge Report — Kenyan Trade-Document Extraction API</title>
+<style>
+  :root{
+    --ink:#1f1b16;
+    --ink-soft:#4a4238;
+    --paper:#f4efe4;
+    --paper-2:#ece5d6;
+    --rule:#c9bda4;
+    --seal:#8c1c13;
+    --seal-dark:#5e110b;
+    --accent:#0f4c43;
+    --gold:#b08d3f;
+  }
+  *{box-sizing:border-box}
+  body{
+    margin:0;
+    background:
+      radial-gradient(circle at 12% 8%, rgba(176,141,63,.10), transparent 45%),
+      radial-gradient(circle at 88% 92%, rgba(140,28,19,.08), transparent 50%),
+      var(--paper);
+    color:var(--ink);
+    font-family:ui-serif, Georgia, "Iowan Old Style", "Times New Roman", serif;
+    line-height:1.6;
+    padding:48px 20px 80px;
+  }
+  .sheet{
+    max-width:900px;margin:0 auto;
+    background:linear-gradient(180deg, #fbf8f1, var(--paper-2));
+    border:1px solid var(--rule);
+    box-shadow:0 1px 0 #fff inset, 0 18px 50px rgba(40,30,15,.14);
+    padding:56px 64px 64px;
+    position:relative;
+  }
+  .sheet::before{
+    content:"";position:absolute;inset:14px;border:1px solid rgba(201,189,164,.7);pointer-events:none;
+  }
+  header{text-align:center;position:relative;z-index:1;margin-bottom:8px}
+  .kicker{
+    font-family:ui-monospace, "SF Mono", Menlo, monospace;
+    font-size:11px;letter-spacing:.28em;text-transform:uppercase;
+    color:var(--ink-soft);margin-bottom:18px;
+  }
+  h1{
+    font-size:31px;line-height:1.2;margin:0 0 10px;font-weight:600;letter-spacing:-.01em;
+  }
+  .sub{color:var(--ink-soft);font-style:italic;font-size:15px;margin:0}
+  .rule{height:1px;background:linear-gradient(90deg,transparent,var(--rule),transparent);margin:34px 0}
+
+  .sealwrap{display:flex;justify-content:center;margin:30px 0 6px}
+  .seal{width:190px;height:190px;filter:drop-shadow(0 10px 18px rgba(94,17,11,.30))}
+  .verdict-note{
+    text-align:center;font-family:ui-monospace,Menlo,monospace;font-size:11px;
+    letter-spacing:.22em;text-transform:uppercase;color:var(--seal);margin:14px 0 0;
+  }
+
+  h2{
+    font-size:13px;letter-spacing:.18em;text-transform:uppercase;
+    font-family:ui-monospace,Menlo,monospace;color:var(--accent);
+    margin:44px 0 14px;padding-bottom:8px;border-bottom:1px solid var(--rule);
+  }
+  p{margin:0 0 14px}
+  .lede{font-size:16.5px}
+  ul{margin:0 0 14px;padding-left:22px}
+  li{margin-bottom:9px}
+  li::marker{color:var(--gold)}
+  strong{font-weight:600}
+  code{
+    font-family:ui-monospace,Menlo,monospace;font-size:12.5px;
+    background:rgba(176,141,63,.14);padding:1px 5px;border-radius:3px;
+  }
+
+  .grid{display:grid;grid-template-columns:1fr 1fr;gap:22px}
+  @media (max-width:720px){.grid{grid-template-columns:1fr}.sheet{padding:36px 26px}}
+  .card{
+    background:rgba(255,255,255,.5);border:1px solid var(--rule);
+    padding:18px 20px;
+  }
+  .card h3{
+    margin:0 0 8px;font-size:12px;letter-spacing:.14em;text-transform:uppercase;
+    font-family:ui-monospace,Menlo,monospace;color:var(--seal);
+  }
+  .card ul{padding-left:18px;margin:0}
+  .card li{font-size:14.5px;margin-bottom:7px}
+
+  table{width:100%;border-collapse:collapse;margin:10px 0 6px;font-size:14.5px}
+  th,td{text-align:left;padding:9px 10px;border-bottom:1px solid var(--rule);vertical-align:top}
+  th{
+    font-family:ui-monospace,Menlo,monospace;font-size:10.5px;letter-spacing:.14em;
+    text-transform:uppercase;color:var(--ink-soft);font-weight:500;
+  }
+
+  .voices{display:grid;grid-template-columns:1fr;gap:14px}
+  .voice{display:flex;gap:14px;align-items:flex-start;background:rgba(255,255,255,.42);border-left:3px solid var(--gold);padding:13px 16px}
+  .voice .icon{font-size:20px;line-height:1.2;flex:0 0 26px}
+  .voice .who{font-weight:600;font-size:14px}
+  .voice .role{color:var(--ink-soft);font-weight:400;font-size:13px}
+  .voice .said{font-style:italic;font-size:14.5px;margin-top:3px;color:var(--ink-soft)}
+
+  .crack{background:rgba(140,28,19,.05);border:1px solid rgba(140,28,19,.28);padding:16px 20px}
+  .crack h3{margin:0 0 8px;font-size:12px;letter-spacing:.14em;text-transform:uppercase;font-family:ui-monospace,Menlo,monospace;color:var(--seal)}
+
+  footer{
+    margin-top:52px;padding-top:22px;border-top:1px solid var(--rule);
+    font-family:ui-monospace,Menlo,monospace;font-size:11px;letter-spacing:.06em;
+    color:var(--ink-soft);display:flex;justify-content:space-between;gap:16px;flex-wrap:wrap;
+  }
+  .mono{font-family:ui-monospace,Menlo,monospace;font-size:12.5px}
+</style>
+</head>
+<body>
+<div class="sheet">
+
+  <header>
+    <div class="kicker">Forge Report &nbsp;·&nbsp; Idea Pressure Test</div>
+    <h1>Kenyan Trade-Document Extraction API</h1>
+    <p class="sub">Group in, per-document JSON out, with the trust gate that decides a human never looks at it.</p>
+  </header>
+
+  <div class="sealwrap">
+    <svg class="seal" viewBox="0 0 200 200" role="img" aria-label="Wax seal stamped HARDENED">
+      <defs>
+        <radialGradient id="wax" cx="38%" cy="32%" r="78%">
+          <stop offset="0%" stop-color="#b33427"/>
+          <stop offset="55%" stop-color="#8c1c13"/>
+          <stop offset="100%" stop-color="#55100a"/>
+        </radialGradient>
+        <filter id="grain">
+          <feTurbulence type="fractalNoise" baseFrequency="0.9" numOctaves="3" seed="7" result="n"/>
+          <feColorMatrix in="n" type="saturate" values="0"/>
+          <feComposite operator="in" in2="SourceGraphic" result="g"/>
+          <feBlend in="SourceGraphic" in2="g" mode="multiply"/>
+        </filter>
+      </defs>
+      <circle cx="100" cy="100" r="92" fill="url(#wax)" filter="url(#grain)"/>
+      <circle cx="100" cy="100" r="92" fill="none" stroke="#3f0b07" stroke-opacity=".55" stroke-width="2"/>
+      <circle cx="100" cy="100" r="78" fill="none" stroke="#f3e3d0" stroke-opacity=".28" stroke-width="1.5"/>
+      <circle cx="100" cy="100" r="70" fill="none" stroke="#f3e3d0" stroke-opacity=".16" stroke-width="1"/>
+      <g fill="#f6e8d6" opacity=".93" text-anchor="middle" font-family="ui-serif, Georgia, serif">
+        <text x="100" y="86" font-size="12" letter-spacing="3.6" opacity=".72">VERDICT</text>
+        <text x="100" y="116" font-size="25" font-weight="600" letter-spacing="1.4">HARDENED</text>
+        <line x1="52" y1="128" x2="148" y2="128" stroke="#f6e8d6" stroke-opacity=".45" stroke-width="1"/>
+        <text x="100" y="146" font-size="9.5" letter-spacing="2.4" opacity=".72">30 OCT 2026</text>
+      </g>
+    </svg>
+  </div>
+  <p class="verdict-note">Idea survives — decisions locked, one class of risk unmeasured</p>
+
+  <div class="rule"></div>
+
+  <p class="lede">The pipeline shape you opened with was sound but pointed at the wrong unit of work. Over the session it moved from <em>file → classify → extract → post</em> to <em>caller-grouped set → segment pages → extract stated values with provenance → validate deterministically → per-document JSON plus a conflict report</em>. The biggest single change: the platform stopped trying to infer which documents belong together. That deleted the hardest problem in the design.</p>
+
+  <h2>What got locked</h2>
+  <div class="grid">
+    <div class="card">
+      <h3>Boundary</h3>
+      <ul>
+        <li>Cloud first; on-prem designed for, not built. Provider adapter behind every model call.</li>
+        <li>Group in, per-document JSON out. Caller asserts the grouping — the platform never matches.</li>
+        <li>v1 refuses multi-shipment containers loudly.</li>
+        <li>Seven document types covered by end of project; automation ordered by volume × determinism, B/L last.</li>
+      </ul>
+    </div>
+    <div class="card">
+      <h3>Truth</h3>
+      <ul>
+        <li>Values are as-stated on the page. Arithmetic is a test oracle, never an output.</li>
+        <li>No duty, no CIF computation — incoterm plus components, so nobody guesses.</li>
+        <li>Provenance bbox mandatory on every emitted field.</li>
+        <li>Two review queues: we misread, versus the papers genuinely disagree.</li>
+      </ul>
+    </div>
+    <div class="card">
+      <h3>Gate</h3>
+      <ul>
+        <li>Auto-post decided by deterministic checks and falsifiable signals.</li>
+        <li>Model confidence ranks the queue; it never gates.</li>
+        <li>Trust ramp per client/supplier/doctype/template, with a permanent client-visible random sample.</li>
+        <li>The sample is the eval harness — accuracy regressions surface without anyone arguing about thresholds.</li>
+      </ul>
+    </div>
+    <div class="card">
+      <h3>Structure</h3>
+      <ul>
+        <li>File is a container, page is the atom, segment is the unit of extraction.</li>
+        <li>Standard spines: UBL/Peppol for invoices, WCO Data Model for customs, thin local block.</li>
+        <li>National code is a field, never baked into field names.</li>
+        <li>Schema invariant across layouts — the assumption the product rests on.</li>
+      </ul>
+    </div>
+  </div>
+
+  <h2>Rejected — and the reason it stays rejected</h2>
+  <table>
+    <thead><tr><th>Option</th><th>Why it died</th></tr></thead>
+    <tbody>
+      <tr><td>File-level classifier</td><td>A misroute feeds the wrong prompt and returns confidently wrong JSON. Silent corruption, not an error.</td></tr>
+      <tr><td>Batch of 5 for throughput</td><td>Latency multiplier, not throughput. Queue plus concurrency limit does the job.</td></tr>
+      <tr><td>ICM as the runtime</td><td>ICM is a human-checkpointed content workflow. Fine for prompt and schema artifacts; wrong engine for transactional extraction.</td></tr>
+      <tr><td>Per-client ERP mapping as prompts</td><td>Unmaintainable past a handful of clients. Config-driven, and deferred to the on-prem platform.</td></tr>
+      <tr><td>Model confidence as the gate</td><td>Uncalibrated, and it drifts silently every time the model or prompt changes.</td></tr>
+      <tr><td>Merged per-job JSON</td><td>The ERP has seven document APIs and a customs officer will ask which document a number came from.</td></tr>
+      <tr><td>B/L number as the primary key</td><td>Doesn't exist when the proforma is issued; not unique for LCL cargo where one master B/L covers many house B/Ls.</td></tr>
+      <tr><td>Cross-email job matching</td><td>Deleted entirely by making grouping an input instead of an inference.</td></tr>
+      <tr><td>PaddleOCR in the cloud path</td><td>Vision model is better there. PaddleOCR belongs to the on-prem stack, if it ever gets built.</td></tr>
+    </tbody>
+  </table>
+
+  <h2>What survived scrutiny</h2>
+  <div class="crack">
+    <h3>The honest weak points</h3>
+    <ul>
+      <li><strong>No eval set.</strong> Accuracy on stamps, handwriting, rotated scans and merged table cells is unmeasured. Every model choice in this document is unverifiable until that exists.</li>
+      <li><strong>Review rate unknown.</strong> It is the business model. A document that costs three cents and four minutes of a clerk is a two-dollar document.</li>
+      <li><strong>The strongest check is the weakest link.</strong> Text-layer versus vision disagreement only works on digital PDFs. Pure scans fall back to arithmetic alone.</li>
+      <li><strong>Kenyan specifics unverified.</strong> IDF/RDL/VAT treatment, iCMS required fields, TradeNet message schemas, where the port pass actually originates.</li>
+      <li><strong>"Accommodate everything" has no stopping rule.</strong> A group of one is a group, so the API shape scales — but nothing here says what you decline next.</li>
+    </ul>
+  </div>
+
+  <h2>Voices that pressure-tested it</h2>
+  <div class="voices">
+    <div class="voice"><div class="icon">🏗️</div><div>
+      <div class="who">Winston <span class="role">— System Architect</span></div>
+      <div class="said">"If the unit of work is wrong, everything downstream is a patch. Order isn't arbitrary — a customs entry that references an invoice needs the invoice to exist first."</div>
+    </div></div>
+    <div class="voice"><div class="icon">📏</div><div>
+      <div class="who">Level <span class="role">— Claim Checker</span></div>
+      <div class="said">"You've named one identifier and called it the key. Which of your seven document types is guaranteed to carry it, and is it unique per job?"</div>
+    </div></div>
+    <div class="voice"><div class="icon">🌶️</div><div>
+      <div class="who">Boundary <span class="role">— Edge-Case Hunter</span></div>
+      <div class="said">"Invoice says 18,450 kg. Packing list says 18,540 kg. Which one does your JSON say, and what does the ERP do with the two that lost?"</div>
+    </div></div>
+    <div class="voice"><div class="icon">🧪</div><div>
+      <div class="who">Murat <span class="role">— Test Architect</span></div>
+      <div class="said">"That permanent one-in-ten sample isn't overhead, it's your eval harness. You never have to argue about whether a threshold is still calibrated, because you're still measuring."</div>
+    </div></div>
+    <div class="voice"><div class="icon">🎯</div><div>
+      <div class="who">Yui <span class="role">— The Craftsman</span></div>
+      <div class="said">"A universal data model is one model. A universal product is nine products. You agreed to the first and waved at the second."</div>
+    </div></div>
+    <div class="voice"><div class="icon">🚢</div><div>
+      <div class="who">Dana <span class="role">— The Pragmatist</span></div>
+      <div class="said">"Don't build a saga orchestrator. Hold the job, lock it, post in order, key on the document hash. Fifty lines, not a framework."</div>
+    </div></div>
+    <div class="voice"><div class="icon">⚓</div><div>
+      <div class="who">Wanjiru <span class="role">— Clearing agent, Mombasa (generated)</span></div>
+      <div class="said">"Everyone's software reads the invoice. Nobody's software tells me the entry doesn't match the invoice until KRA tells me. That's the product."</div>
+    </div></div>
+    <div class="voice"><div class="icon">📦</div><div>
+      <div class="who">Fatuma <span class="role">— LCL coordinator (generated)</span></div>
+      <div class="said">"One master bill of lading covers eleven house bills, eleven consignees, eleven shipments. Which one is my job?"</div>
+    </div></div>
+    <div class="voice"><div class="icon">🧭</div><div>
+      <div class="who">Dominic <span class="role">— CTO, logistics platform (generated)</span></div>
+      <div class="said">"I'll group the documents. I know the B/L — my TMS has it. What I can't do is tell you my invoice's weight disagrees with my packing list; that's why I'm paying you."</div>
+    </div></div>
+  </div>
+
+  <h2>Do first</h2>
+  <ol>
+    <li>Build a labelled eval set before choosing any model: 20–30 real documents per type, from a working clearing agent.</li>
+    <li>Confirm with that agent: required iCMS/TradeNet fields, IDF/RDL/VAT treatment, port-pass origin, and the posting order of the seven ERP APIs.</li>
+  </ol>
+
+  <footer>
+    <span>FORGED 30 OCT 2026 · bmad-forge-idea</span>
+    <span>forged-idea.md · memlog.md</span>
+  </footer>
+
+</div>
+</body>
+</html>

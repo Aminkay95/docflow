@@ -1,0 +1,1104 @@
+openapi: 3.1.0
+info:
+  title: Trade Extract API
+  version: 1.0.0
+  description: |
+    Provenance-first asynchronous extraction API for Kenyan trade documents.
+
+    A caller submits a group of files under an optional opaque `job_ref`. The result contains
+    one document object per submitted file segment, with stated values, page and bounding-box
+    provenance, deterministic checks, cross-document conflicts, and a pass-or-review decision.
+
+    Authentication is a bearer API key. Completion is delivered by webhook with polling as a
+    fallback. Every error uses the same envelope.
+  contact:
+    name: Trade Extract
+    url: https://trade-extract.example
+  license:
+    name: Proprietary
+servers:
+  - url: https://api.trade-extract.example
+    description: Production
+  - url: http://localhost:8000
+    description: Local development
+security:
+  - bearerAuth: []
+tags:
+  - name: Extraction
+  - name: Results
+  - name: Jobs
+  - name: Documents
+  - name: Account
+  - name: Health
+paths:
+  /v1/extract:
+    post:
+      tags: [Extraction]
+      summary: Submit trade documents for extraction
+      description: |
+        Accepts 1–20 files under an optional `job_ref`. Returns `202` with a result id.
+        Limits are enforced before any file is stored. Re-submitting the same file into the
+        same job is idempotent and counted in `duplicate_documents`.
+      operationId: extractDocuments
+      parameters:
+        - name: Idempotency-Key
+          in: header
+          required: false
+          schema:
+            type: string
+            minLength: 8
+            maxLength: 128
+          description: Same key + same body returns the original result; different body returns 409.
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [documents]
+              properties:
+                job_ref:
+                  type: string
+                  maxLength: 128
+                  description: Opaque caller reference. Same value accumulates into one job.
+                webhook_url:
+                  type: string
+                  format: uri
+                  maxLength: 2048
+                  description: Per-submission webhook override. HTTPS in production.
+                documents:
+                  type: array
+                  minItems: 1
+                  maxItems: 20
+                  items:
+                    type: string
+                    format: binary
+            encoding:
+              documents:
+                contentType: application/pdf, image/jpeg, image/png, image/webp, image/tiff
+      responses:
+        "202":
+          description: Accepted for asynchronous processing.
+          headers:
+            Location:
+              schema:
+                type: string
+              description: URL of the result resource.
+            Retry-After:
+              schema:
+                type: integer
+              description: Polling hint in seconds.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ExtractAccepted"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "413":
+          $ref: "#/components/responses/PayloadTooLarge"
+        "415":
+          $ref: "#/components/responses/UnsupportedMediaType"
+        "422":
+          $ref: "#/components/responses/UnprocessableEntity"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+        "500":
+          $ref: "#/components/responses/InternalError"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
+
+  /v1/results/{result_id}:
+    get:
+      tags: [Results]
+      summary: Poll a submission result
+      operationId: getResult
+      parameters:
+        - $ref: "#/components/parameters/ResultId"
+        - name: include
+          in: query
+          required: false
+          schema:
+            type: string
+            default: documents,conflicts,decision
+          description: Comma list of documents, conflicts, checks, provenance, review, decision.
+        - name: document_id
+          in: query
+          required: false
+          schema:
+            type: string
+      responses:
+        "200":
+          description: The result, possibly still processing.
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+              example: no-store
+            ETag:
+              schema:
+                type: string
+            Retry-After:
+              schema:
+                type: integer
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Result"
+        "304":
+          description: Not modified.
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /v1/jobs/{job_id}:
+    get:
+      tags: [Jobs]
+      summary: Read a logical job
+      operationId: getJob
+      parameters:
+        - $ref: "#/components/parameters/JobId"
+      responses:
+        "200":
+          description: Job across every submission.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Job"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /v1/jobs/{job_id}/documents:
+    get:
+      tags: [Jobs]
+      summary: List documents in a job
+      operationId: listJobDocuments
+      parameters:
+        - $ref: "#/components/parameters/JobId"
+        - $ref: "#/components/parameters/Limit"
+        - $ref: "#/components/parameters/Cursor"
+        - name: status
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: document_type
+          in: query
+          required: false
+          schema:
+            $ref: "#/components/schemas/DocumentType"
+      responses:
+        "200":
+          description: Paginated documents.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PaginatedDocuments"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /v1/jobs/{job_id}/conflicts:
+    get:
+      tags: [Jobs]
+      summary: List conflicts in a job
+      operationId: listJobConflicts
+      parameters:
+        - $ref: "#/components/parameters/JobId"
+        - $ref: "#/components/parameters/Limit"
+        - $ref: "#/components/parameters/Cursor"
+        - name: status
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [open, resolved, waived]
+      responses:
+        "200":
+          description: Paginated conflicts.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PaginatedConflicts"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /v1/documents/{document_id}:
+    get:
+      tags: [Documents]
+      summary: Read one document
+      operationId: getDocument
+      parameters:
+        - $ref: "#/components/parameters/DocumentId"
+        - name: include
+          in: query
+          required: false
+          schema:
+            type: string
+            default: provenance,checks,conflicts
+      responses:
+        "200":
+          description: Document with fields, provenance, checks, conflicts and decision.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Document"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /v1/policy:
+    get:
+      tags: [Account]
+      summary: Read the active policy summary
+      operationId: getPolicy
+      responses:
+        "200":
+          description: Active policy version and review configuration.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Policy"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /v1/usage:
+    get:
+      tags: [Account]
+      summary: Read current-period usage and limits
+      operationId: getUsage
+      responses:
+        "200":
+          description: Usage and limits.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Usage"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /v1/account/exports:
+    post:
+      tags: [Account]
+      summary: Start a full extraction-record export
+      operationId: createExport
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ExportRequest"
+      responses:
+        "202":
+          description: Export queued.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ExportAccepted"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
+  /v1/account/exports/{export_id}:
+    get:
+      tags: [Account]
+      summary: Poll an export
+      operationId: getExport
+      parameters:
+        - name: export_id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Export status and download URL when complete.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ExportStatus"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /v1/account/deletion-requests:
+    post:
+      tags: [Account]
+      summary: Request deletion of extraction records
+      operationId: createDeletionRequest
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DeletionRequest"
+      responses:
+        "202":
+          description: Deletion request created.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DeletionAccepted"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "422":
+          $ref: "#/components/responses/UnprocessableEntity"
+
+  /v1/health:
+    get:
+      tags: [Health]
+      summary: Liveness
+      operationId: health
+      security: []
+      responses:
+        "200":
+          description: Service is alive.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Health"
+
+  /v1/health/ready:
+    get:
+      tags: [Health]
+      summary: Readiness
+      operationId: ready
+      security: []
+      responses:
+        "200":
+          description: Database, storage and active policy are available.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Health"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: API key
+      description: "`Authorization: Bearer tx_live_…`"
+
+  parameters:
+    ResultId:
+      name: result_id
+      in: path
+      required: true
+      schema:
+        type: string
+    JobId:
+      name: job_id
+      in: path
+      required: true
+      schema:
+        type: string
+    DocumentId:
+      name: document_id
+      in: path
+      required: true
+      schema:
+        type: string
+    Limit:
+      name: limit
+      in: query
+      required: false
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 100
+        default: 25
+    Cursor:
+      name: cursor
+      in: query
+      required: false
+      schema:
+        type: string
+
+  responses:
+    BadRequest:
+      description: Malformed request.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorEnvelope"
+    Unauthorized:
+      description: Missing, malformed, revoked or expired key.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorEnvelope"
+    Forbidden:
+      description: Key lacks scope, or the resource belongs to another client.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorEnvelope"
+    NotFound:
+      description: Resource not found.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorEnvelope"
+    Conflict:
+      description: Idempotency or state conflict.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorEnvelope"
+    PayloadTooLarge:
+      description: Request or file too large.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorEnvelope"
+    UnsupportedMediaType:
+      description: Magic bytes are not an accepted document type.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorEnvelope"
+    UnprocessableEntity:
+      description: A named limit or document rule was broken.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorEnvelope"
+    RateLimited:
+      description: Per-key rate or concurrency limit.
+      headers:
+        Retry-After:
+          schema:
+            type: integer
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorEnvelope"
+    InternalError:
+      description: Unhandled server error.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorEnvelope"
+    ServiceUnavailable:
+      description: Database, storage or maintenance outage.
+      headers:
+        Retry-After:
+          schema:
+            type: integer
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorEnvelope"
+
+  schemas:
+    Error:
+      type: object
+      required: [code, message, request_id]
+      properties:
+        code:
+          type: string
+          examples: [file_too_large]
+        message:
+          type: string
+        request_id:
+          type: string
+        details:
+          type: object
+          additionalProperties: true
+        doc_url:
+          type: string
+          format: uri
+
+    ErrorEnvelope:
+      type: object
+      required: [error]
+      properties:
+        error:
+          $ref: "#/components/schemas/Error"
+
+    ExtractAccepted:
+      type: object
+      required: [result_id, job_id, status, submitted_documents, status_url, created_at]
+      properties:
+        result_id:
+          type: string
+        job_id:
+          type: string
+        job_ref:
+          type: [string, "null"]
+        status:
+          type: string
+          enum: [queued, processing, completed, failed]
+        submitted_documents:
+          type: integer
+        duplicate_documents:
+          type: integer
+        status_url:
+          type: string
+        job_url:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+
+    DocumentType:
+      type: string
+      enum:
+        - commercial_invoice
+        - proforma_invoice
+        - bill_of_lading
+        - delivery_order
+        - port_pass
+        - custom_entry
+        - verification_memo
+        - packing_list
+        - unknown
+
+    BBox:
+      type: object
+      required: [x0, y0, x1, y1]
+      properties:
+        x0: { type: number, minimum: 0, maximum: 1 }
+        y0: { type: number, minimum: 0, maximum: 1 }
+        x1: { type: number, minimum: 0, maximum: 1 }
+        y1: { type: number, minimum: 0, maximum: 1 }
+
+    Provenance:
+      type: object
+      required: [page_index, bbox, coordinate_space, reader, document_hash]
+      properties:
+        page_index:
+          type: integer
+          minimum: 0
+        page_number:
+          type: integer
+          minimum: 1
+        bbox:
+          $ref: "#/components/schemas/BBox"
+        coordinate_space:
+          type: string
+          enum: [normalized_top_left]
+        page_width_pt:
+          type: number
+        page_height_pt:
+          type: number
+        reader:
+          type: string
+          enum: [text_layer, paddle, vision, human]
+        reader_version:
+          type: string
+        model:
+          type: [string, "null"]
+        confidence:
+          type: [number, "null"]
+          minimum: 0
+          maximum: 1
+        document_hash:
+          type: string
+
+    FieldAlternative:
+      type: object
+      required: [value, reader, provenance]
+      properties:
+        value:
+          type: string
+        reader:
+          type: string
+          enum: [text_layer, paddle, vision, human]
+        confidence:
+          type: [number, "null"]
+        provenance:
+          $ref: "#/components/schemas/Provenance"
+
+    Field:
+      type: object
+      required: [kind, value, value_type, provenance, agreement]
+      properties:
+        kind:
+          type: string
+          enum: [scalar]
+        value:
+          type: string
+        value_type:
+          type: string
+          enum: [string, decimal, integer, date, datetime, boolean, enum]
+        raw_text:
+          type: [string, "null"]
+        provenance:
+          $ref: "#/components/schemas/Provenance"
+        agreement:
+          type: string
+          enum: [unanimous, majority, single_reader, disputed, human_corrected]
+        alternatives:
+          type: array
+          items:
+            $ref: "#/components/schemas/FieldAlternative"
+
+    TableColumn:
+      type: object
+      required: [key, label]
+      properties:
+        key: { type: string }
+        label: { type: string }
+
+    TableMeta:
+      type: object
+      required: [columns, row_count_stated, row_count_extracted, truncated, unresolved_rows]
+      properties:
+        columns:
+          type: array
+          items:
+            $ref: "#/components/schemas/TableColumn"
+        row_count_stated:
+          type: [integer, "null"]
+        row_count_extracted:
+          type: integer
+        truncated:
+          type: boolean
+        unresolved_rows:
+          type: array
+          items:
+            type: integer
+
+    Check:
+      type: object
+      required: [code, tier, status, severity, message]
+      properties:
+        code:
+          type: string
+        tier:
+          type: integer
+          minimum: 1
+          maximum: 3
+        status:
+          type: string
+          enum: [pass, fail, warn, skipped]
+        field_path:
+          type: [string, "null"]
+        expected:
+          description: Expected value for display; never emitted as document data.
+        actual:
+          description: Actual value for display; never emitted as document data.
+        severity:
+          type: string
+          enum: [info, warning, blocking]
+        message:
+          type: string
+
+    ConflictSource:
+      type: object
+      required: [document_id, document_type, value]
+      properties:
+        document_id:
+          type: string
+        document_type:
+          $ref: "#/components/schemas/DocumentType"
+        value:
+          type: string
+        provenance:
+          $ref: "#/components/schemas/Provenance"
+
+    Conflict:
+      type: object
+      required: [conflict_id, canonical_key, field_label, status, sources]
+      properties:
+        conflict_id:
+          type: string
+        canonical_key:
+          type: string
+        field_label:
+          type: string
+        status:
+          type: string
+          enum: [open, resolved, waived]
+        sources:
+          type: array
+          items:
+            $ref: "#/components/schemas/ConflictSource"
+
+    Decision:
+      type: object
+      required: [value, reasons]
+      properties:
+        value:
+          type: string
+          enum: [pass, review, unreadable, failed]
+        route:
+          type: string
+          enum: [none, extraction, conflict]
+        reasons:
+          type: array
+          items:
+            type: string
+
+    ReviewCounts:
+      type: object
+      properties:
+        extraction_open:
+          type: integer
+          minimum: 0
+        conflict_open:
+          type: integer
+          minimum: 0
+
+    DocumentReview:
+      type: object
+      properties:
+        extraction_open:
+          type: boolean
+        conflict_open:
+          type: boolean
+        url:
+          type: [string, "null"]
+
+    Source:
+      type: object
+      required: [filename, content_type, file_hash, document_hash, page_start, page_end]
+      properties:
+        filename: { type: string }
+        content_type: { type: string }
+        file_hash: { type: string }
+        document_hash: { type: string }
+        page_start: { type: integer }
+        page_end: { type: integer }
+        page_count: { type: integer }
+
+    Document:
+      type: object
+      required:
+        - document_id
+        - status
+      properties:
+        document_id: { type: string }
+        result_id: { type: string }
+        job_id: { type: string }
+        job_ref:
+          type: [string, "null"]
+        file_id: { type: string }
+        segment_id: { type: string }
+        document_type:
+          anyOf:
+            - $ref: "#/components/schemas/DocumentType"
+            - type: "null"
+        document_type_confidence:
+          type: [number, "null"]
+          minimum: 0
+          maximum: 1
+        schema_version:
+          type: [string, "null"]
+        status:
+          type: string
+          enum: [queued, processing, extracted, review_required, resolved, unreadable, failed]
+        source:
+          $ref: "#/components/schemas/Source"
+        fields:
+          description: Present when extracted; null while queued or processing.
+          anyOf:
+            - type: object
+              additionalProperties:
+                $ref: "#/components/schemas/Field"
+            - type: "null"
+        tables:
+          type: object
+          additionalProperties:
+            $ref: "#/components/schemas/TableMeta"
+        extension:
+          type: object
+          additionalProperties:
+            $ref: "#/components/schemas/Field"
+        checks:
+          anyOf:
+            - type: array
+              items:
+                $ref: "#/components/schemas/Check"
+            - type: "null"
+        conflicts:
+          anyOf:
+            - type: array
+              items:
+                $ref: "#/components/schemas/Conflict"
+            - type: "null"
+        decision:
+          anyOf:
+            - $ref: "#/components/schemas/Decision"
+            - type: "null"
+        review:
+          $ref: "#/components/schemas/DocumentReview"
+        created_at: { type: string, format: date-time }
+        extracted_at:
+          type: [string, "null"]
+          format: date-time
+
+    Progress:
+      type: object
+      properties:
+        documents_total: { type: integer }
+        documents_completed: { type: integer }
+        documents_failed: { type: integer }
+        pages_total: { type: integer }
+        pages_read: { type: integer }
+
+    Result:
+      type: object
+      required: [result_id, job_id, status, created_at, documents, conflicts, policy]
+      properties:
+        result_id: { type: string }
+        job_id: { type: string }
+        job_ref:
+          type: [string, "null"]
+        status:
+          type: string
+          enum: [queued, processing, completed, failed]
+        progress:
+          $ref: "#/components/schemas/Progress"
+        created_at: { type: string, format: date-time }
+        completed_at:
+          type: [string, "null"]
+          format: date-time
+        documents:
+          type: array
+          items:
+            $ref: "#/components/schemas/Document"
+        conflicts:
+          type: array
+          items:
+            $ref: "#/components/schemas/Conflict"
+        decision:
+          $ref: "#/components/schemas/Decision"
+        review:
+          $ref: "#/components/schemas/ReviewCounts"
+        policy:
+          type: object
+          properties:
+            version: { type: integer }
+            effective_at: { type: string, format: date-time }
+
+    Job:
+      type: object
+      required: [job_id, status, created_at, document_count, documents, conflicts, policy]
+      properties:
+        job_id: { type: string }
+        job_ref:
+          type: [string, "null"]
+        status:
+          type: string
+          enum: [queued, processing, review_required, completed, failed]
+        created_at: { type: string, format: date-time }
+        last_submission_at: { type: string, format: date-time }
+        terminal_at:
+          type: [string, "null"]
+          format: date-time
+        document_count: { type: integer }
+        documents:
+          type: array
+          items:
+            type: object
+            properties:
+              document_id: { type: string }
+              document_type:
+                $ref: "#/components/schemas/DocumentType"
+              status: { type: string }
+              decision: { type: string }
+              submitted_at: { type: string, format: date-time }
+        conflicts:
+          type: array
+          items:
+            $ref: "#/components/schemas/ConflictSummary"
+        review:
+          $ref: "#/components/schemas/ReviewCounts"
+        policy:
+          type: object
+          properties:
+            version: { type: integer }
+
+    ConflictSummary:
+      type: object
+      required: [conflict_id, canonical_key, status]
+      properties:
+        conflict_id: { type: string }
+        canonical_key: { type: string }
+        field_label: { type: string }
+        status:
+          type: string
+          enum: [open, resolved, waived]
+        source_count:
+          type: integer
+
+    DocumentSummary:
+      type: object
+      properties:
+        document_id: { type: string }
+        document_type:
+          $ref: "#/components/schemas/DocumentType"
+        status: { type: string }
+        decision: { type: string }
+        created_at: { type: string, format: date-time }
+
+    PaginatedDocuments:
+      type: object
+      required: [data, has_more]
+      properties:
+        data:
+          type: array
+          items:
+            $ref: "#/components/schemas/DocumentSummary"
+        next_cursor:
+          type: [string, "null"]
+        has_more:
+          type: boolean
+
+    PaginatedConflicts:
+      type: object
+      required: [data, has_more]
+      properties:
+        data:
+          type: array
+          items:
+            $ref: "#/components/schemas/Conflict"
+        next_cursor:
+          type: [string, "null"]
+        has_more:
+          type: boolean
+
+    Policy:
+      type: object
+      required: [version, name, effective_at, invoice_pass_enabled, trust_ramp_enabled, review_depth, limits]
+      properties:
+        version: { type: integer }
+        name: { type: string }
+        effective_at: { type: string, format: date-time }
+        invoice_pass_enabled: { type: boolean }
+        trust_ramp_enabled: { type: boolean }
+        review_depth:
+          type: object
+          additionalProperties:
+            type: string
+            enum: [gate, full]
+        limits:
+          type: object
+          properties:
+            max_documents_per_group: { type: integer }
+            max_file_bytes: { type: integer }
+            max_pages_per_file: { type: integer }
+
+    Usage:
+      type: object
+      properties:
+        period:
+          type: object
+          properties:
+            start: { type: string, format: date }
+            end: { type: string, format: date }
+        submissions: { type: integer }
+        documents: { type: integer }
+        pages: { type: integer }
+        limits:
+          type: object
+          additionalProperties:
+            type: integer
+        rate_limit:
+          type: object
+          properties:
+            remaining: { type: integer }
+            reset_at: { type: string, format: date-time }
+
+    ExportRequest:
+      type: object
+      properties:
+        format:
+          type: string
+          enum: [jsonl]
+          default: jsonl
+        include_provenance:
+          type: boolean
+          default: true
+
+    ExportAccepted:
+      type: object
+      required: [export_id, status, status_url]
+      properties:
+        export_id: { type: string }
+        status:
+          type: string
+          enum: [queued, running]
+        status_url: { type: string }
+
+    ExportStatus:
+      type: object
+      required: [export_id, status]
+      properties:
+        export_id: { type: string }
+        status:
+          type: string
+          enum: [queued, running, completed, failed]
+        download_url:
+          type: [string, "null"]
+          format: uri
+        expires_at:
+          type: [string, "null"]
+          format: date-time
+        sha256:
+          type: [string, "null"]
+        error:
+          type: [string, "null"]
+
+    DeletionRequest:
+      type: object
+      required: [scope, confirmation]
+      properties:
+        scope:
+          type: string
+          enum: [extraction_records]
+        confirmation:
+          type: string
+          description: Must equal "DELETE ALL EXTRACTION RECORDS".
+        reason:
+          type: string
+
+    DeletionAccepted:
+      type: object
+      required: [deletion_request_id, status, status_url]
+      properties:
+        deletion_request_id: { type: string }
+        status:
+          type: string
+          enum: [pending_review, scheduled]
+        effective_date:
+          type: [string, "null"]
+          format: date
+        status_url: { type: string }
+
+    Health:
+      type: object
+      required: [status]
+      properties:
+        status:
+          type: string
+          enum: [ok, degraded, unavailable]
+        checks:
+          type: object
+          additionalProperties:
+            type: string
+        version:
+          type: string

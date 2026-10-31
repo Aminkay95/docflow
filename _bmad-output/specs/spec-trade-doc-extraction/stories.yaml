@@ -1,0 +1,146 @@
+- id: "1"
+  title: API contract, async lifecycle, idempotency and refusal guardrails
+  description: >-
+    Implement POST /v1/extract taking an optional opaque job_ref and a documents array, returning 202 with a
+    result id resolvable by webhook and by polling, per CAP-1 and CAP-8. Include deterministic per-document
+    idempotency keys, the 20-document group limit, the 25 MB per-file rejection, and the loud multi-shipment
+    refusal with count and split instruction.
+  invoke_dev_with: >-
+    Limits are enforced before any file is stored, not after. A rejection must name which rule was broken and
+    what the caller should do instead.
+
+- id: "2"
+  title: Page model and always-on segmentation
+  description: >-
+    Build the file-as-container, page-as-atom model and run document segmentation unconditionally on every
+    submitted file, emitting per-segment page ranges and document types per CAP-2. A file containing several
+    document types must yield several segments with non-overlapping page ranges.
+
+- id: "3"
+  title: Seven document schemas on standard spines
+  description: >-
+    Define output schemas for all seven document types per CAP-9, deriving the invoice family from UBL 2.1 /
+    Peppol BIS Billing 3.0 and custom entry from the WCO Data Model, with market detail confined to per-type
+    extension blocks. National context stays a field value, never a field name.
+  spec_checkpoint: true
+  invoke_dev_with: >-
+    This is the decision most expensive to reverse. Document every field's provenance requirement and the
+    extension-block boundary before writing schema code. The custom entry field set in document-types.md is an
+    unverified guess; implement it as data, not as validated truth. Every field added here needs a real document
+    to justify it.
+
+- id: "4"
+  title: Provider adapter and text-layer plus vision readers
+  description: >-
+    Put a provider adapter behind every model call so the inference stack is swappable, and stand up the first
+    two readers behind one reader interface — embedded text layer and vision — capturing reader disagreement as
+    a first-class signal. DeepSeek is the first provider and the vision reader runs on deepseek-flash.
+  invoke_dev_with: >-
+    deepseek-v4-pro is text-only; it may never be the vision reader, and Pro use is limited to reasoning over
+    already-extracted text. Provider JSON mode guarantees valid JSON, not schema adherence, so build the
+    validate-and-repair loop here rather than patching it later. No provider-specific type may cross the
+    adapter boundary into the domain model.
+
+- id: "5"
+  title: Page conditioning, quality triage and unreadable refusal
+  description: >-
+    Correct every page before vision — orientation, deskew, crop, DPI normalisation, denoise — score what is
+    left, and return an explicit unreadable outcome with a reason when correction does not save it, per CAP-10.
+  invoke_dev_with: >-
+    This is deterministic image work plus a legibility score, not a model call. The worst case is a WhatsApp
+    photo of a printed page at an angle with a stamp over the totals block; that is the input this story exists
+    for. A pipeline that guesses is worse than one that refuses.
+
+- id: "6"
+  title: PaddleOCR reader, table structure and reader routing
+  description: >-
+    Add PaddleOCR as a third reader behind the same interface, use it for deterministic table structure, and
+    implement the per-page routing policy that decides which readers run on a given page. Long tables must be
+    reconstructed from table structure plus region crops, never from a downscaled whole page, per CAP-11.
+  invoke_dev_with: >-
+    The routing policy is the real deliverable; PaddleOCR is a component. Baseline: good text layer means the
+    text reader alone; clean flat scan means OCR and vision compared; photographed, skewed or stamped page means
+    vision, with dense regions sent as crops at native resolution. PaddleOCR must never be the primary reader for
+    stamps, handwriting or rotated photos. Silent truncation is the failure mode that looks like success: output
+    well-formed, shorter than the document, unnoticed until a quantity is challenged.
+
+- id: "7"
+  title: Eval harness and labelled corpus intake
+  description: >-
+    Build the harness that ingests the labelled corpus of complete jobs and reports accuracy per document type
+    and per field, plus observed review rate. Roughly twenty to thirty real documents per type are the input;
+    the harness is what turns those into the viability numbers the spec deliberately left unset.
+  done_checkpoint: true
+  invoke_dev_with: >-
+    Nothing downstream should be tuned before this reports real numbers. Report per-field accuracy, not just
+    per-document, and state explicitly which document types have too few samples to say anything about. Separate
+    real documents from synthetic ones in every report and never blend their scores.
+
+- id: "8"
+  title: Invoice extraction with provenance
+  description: >-
+    Extract the full commercial invoice field set with page index and bounding-box provenance on every emitted
+    field, emitting values exactly as stated on the page. No field without provenance is emitted.
+
+- id: "9"
+  title: Invoice deterministic checks and review gate
+  description: >-
+    Implement the invoice check set — arithmetic identities, incoterm and currency enums, date ordering,
+    container check digits, HS structure — and the gate that turns those into a pass-or-review decision with a
+    human-readable reason per failed check, per CAP-4 and CAP-12.
+  spec_checkpoint: true
+  done_checkpoint: true
+  invoke_dev_with: >-
+    This is the first honest end-to-end demo: a real invoice in, a defensible decision out. Computed values are
+    produced by the checks and must never appear in the emitted document. Thresholds and review depth are
+    configuration, versioned, and recorded on every decision — the product owner sets the number, engineering
+    builds the dial. If a check would require a rate table the platform does not own, the check does not belong
+    here.
+
+- id: "10"
+  title: Cross-document conflict detection
+  description: >-
+    Detect when two documents in the same asserted group disagree on the same field, emitting one conflict entry
+    naming the field and every disagreeing source document while each document still reports its own stated
+    value. The platform reports conflicts and never resolves them.
+
+- id: "11"
+  title: Repeat-call accumulation under job_ref
+  description: >-
+    Allow further documents to be submitted under an existing job_ref and reconcile the new results against what
+    that job already holds. An invoice submitted on day one and a bill of lading on day three must produce one
+    job with conflicts evaluated across the pair.
+
+- id: "12"
+  title: Review queue with two tracks and correction capture
+  description: >-
+    Build distinct extraction-review and conflict-review flows with separate counts, and capture every reviewer
+    decision as a labelled record of field, prior value, outcome and reason. Email may alert, but resolution
+    happens only inside the authenticated platform.
+  spec_checkpoint: true
+  done_checkpoint: true
+  invoke_dev_with: >-
+    The two tracks must never be merged into one list. Extraction review is our error; conflict review is the
+    client's business call. The correction records are the labelled dataset the next quarter depends on, so
+    their shape matters more than the screen.
+
+- id: "13"
+  title: Trust-ramp records
+  description: >-
+    Record trust state per client, supplier, document type and template fingerprint so review depth can be
+    reduced later without redesign. Unseen template fingerprints start at full review and a human correction
+    demotes the matching record; v1 never promotes automatically.
+
+- id: "14"
+  title: Three standard-spine types — proforma invoice, bill of lading, custom entry
+  description: >-
+    Bring extraction live for the three remaining types that have a recognised spine, all routing to full
+    review. Once custom entry is covered, its printed derived figures become an additional cross-document
+    reconciliation signal, reported only as disagreement with invoiced components.
+
+- id: "15"
+  title: Three local types — delivery order, port pass, verification memo
+  description: >-
+    Bring extraction live for the three market-specific types, whose detail lives entirely in extension blocks,
+    all routing to full review. The verification memo carries the highest layout variance of the seven and its
+    schema must tolerate near-free-form content.
