@@ -17,6 +17,7 @@ htmlcov/
 # Local data and object storage
 /data/
 /tmp/
+/var/
 *.log
 
 # Agent CLI skill trees (junction to .agents/skills)

@@ -1,0 +1,114 @@
+x-app-env: &app-env
+  ENVIRONMENT: ${ENVIRONMENT:-development}
+  DATABASE_URL: ${DATABASE_URL:-postgresql+psycopg://trade:trade@postgres:5432/trade_extract}
+  SECRET_KEY: ${SECRET_KEY:-development-only-secret}
+  API_KEY_PEPPER: ${API_KEY_PEPPER:-development-only-pepper}
+  STORAGE_BACKEND: filesystem
+  STORAGE_DIR: /app/var/storage
+  BASE_URL: ${BASE_URL:-http://localhost:8000}
+  MAX_DOCUMENTS_PER_GROUP: ${MAX_DOCUMENTS_PER_GROUP:-20}
+  MAX_FILE_BYTES: ${MAX_FILE_BYTES:-26214400}
+  MAX_PAGES_PER_FILE: ${MAX_PAGES_PER_FILE:-500}
+  MAX_PAGES_PER_SUBMISSION: ${MAX_PAGES_PER_SUBMISSION:-2000}
+  RETRY_AFTER_SECONDS: ${RETRY_AFTER_SECONDS:-2}
+  TASK_STALE_AFTER_SECONDS: ${TASK_STALE_AFTER_SECONDS:-900}
+  TASK_MAX_REQUEUES: ${TASK_MAX_REQUEUES:-3}
+  TASK_BACKOFF_BASE_SECONDS: ${TASK_BACKOFF_BASE_SECONDS:-2}
+  TASK_BACKOFF_MAX_SECONDS: ${TASK_BACKOFF_MAX_SECONDS:-300}
+  WEBHOOK_MAX_ATTEMPTS: ${WEBHOOK_MAX_ATTEMPTS:-8}
+  WEBHOOK_TIMEOUT_SECONDS: ${WEBHOOK_TIMEOUT_SECONDS:-10}
+  WEBHOOK_CONNECT_TIMEOUT_SECONDS: ${WEBHOOK_CONNECT_TIMEOUT_SECONDS:-5}
+  WEBHOOK_ALLOW_PRIVATE_TARGETS: ${WEBHOOK_ALLOW_PRIVATE_TARGETS:-false}
+  WEBHOOK_STALE_AFTER_SECONDS: ${WEBHOOK_STALE_AFTER_SECONDS:-900}
+  DATABASE_POOL_SIZE: ${DATABASE_POOL_SIZE:-5}
+  DATABASE_POOL_MAX_OVERFLOW: ${DATABASE_POOL_MAX_OVERFLOW:-10}
+
+services:
+  postgres:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: trade
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-trade}
+      POSTGRES_DB: trade_extract
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U trade -d trade_extract"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    ports:
+      - "5432:5432"
+
+  migrate:
+    build:
+      context: .
+      dockerfile: Dockerfile.api
+    command: ["sh", "-c", "alembic upgrade head && python scripts/bootstrap.py"]
+    environment: *app-env
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile.api
+    environment: *app-env
+    ports:
+      - "8000:8000"
+    volumes:
+      - storage:/app/var/storage
+    depends_on:
+      postgres:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request; urllib.request.urlopen('http://localhost:8000/v1/health')",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  worker:
+    build:
+      context: .
+      dockerfile: Dockerfile.worker
+    command: ["python", "-m", "trade_extract.workers"]
+    environment: *app-env
+    volumes:
+      - storage:/app/var/storage
+    depends_on:
+      postgres:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    deploy:
+      resources:
+        limits:
+          memory: 4g
+          cpus: "2"
+
+  maintenance:
+    build:
+      context: .
+      dockerfile: Dockerfile.worker
+    command: ["python", "-m", "trade_extract.workers.maintenance"]
+    environment: *app-env
+    volumes:
+      - storage:/app/var/storage
+    depends_on:
+      postgres:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+
+volumes:
+  pgdata:
+  storage:
