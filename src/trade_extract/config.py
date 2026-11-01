@@ -61,6 +61,15 @@ class Settings(BaseSettings):
     webhook_allow_private_targets: bool = False
     webhook_stale_after_seconds: int = Field(default=900, ge=1)
 
+    # Page rendering and always-on segmentation. Handlers read these; no literal
+    # rendering or classifier threshold lives in a handler. The confidence floor
+    # gates both the top type's share of the top-two score and its raw weighted
+    # score, so a single weak signal never classifies.
+    page_render_dpi: int = Field(default=300, ge=36, le=1200)
+    page_thumbnail_max_px: int = Field(default=512, ge=16, le=4096)
+    page_image_quality: int = Field(default=85, ge=1, le=100)
+    segmentation_min_confidence: float = Field(default=0.55, ge=0.0, le=1.0)
+
     task_stale_after_seconds: int = Field(default=900, ge=1)
     task_max_requeues: int = Field(default=3, ge=1)
     task_backoff_base_seconds: int = Field(default=2, ge=1)

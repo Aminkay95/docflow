@@ -5,6 +5,7 @@ from trade_extract.db.models.client import Client
 from trade_extract.db.models.document import Document
 from trade_extract.db.models.file import File
 from trade_extract.db.models.job import Job
+from trade_extract.db.models.page import Page
 from trade_extract.db.models.policy import Policy
 from trade_extract.db.models.reviewer import Reviewer
 from trade_extract.db.models.segment import Segment
@@ -19,6 +20,7 @@ __all__ = [
     "File",
     "Job",
     "JobTask",
+    "Page",
     "Policy",
     "Reviewer",
     "Segment",

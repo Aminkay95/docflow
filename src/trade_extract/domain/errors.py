@@ -181,6 +181,24 @@ def malformed_document(document: str, reason: str = "the container cannot be rea
     )
 
 
+def processing_failed(
+    document: str, reason: str = "the source could not be read or rendered"
+) -> DomainError:
+    """A worker-side preparation failure for one uploaded file.
+
+    The task retry/dead path owns the outcome; this error exists so the recorded
+    reason names the document instead of an opaque library exception.
+    """
+
+    return DomainError(
+        "processing_failed",
+        f"Document '{document}' could not be prepared ({reason}). "
+        "Re-upload a readable copy and resubmit.",
+        http_status=500,
+        details={"document": document, "reason": reason},
+    )
+
+
 def page_limit_exceeded(
     document: str,
     *,

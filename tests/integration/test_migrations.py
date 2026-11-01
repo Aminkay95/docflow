@@ -25,6 +25,7 @@ TRIGGER_NAMES = {
     "trg_clients_updated_at",
     "trg_reviewers_updated_at",
     "trg_jobs_updated_at",
+    "trg_pages_updated_at",
     "trg_segments_updated_at",
     "trg_documents_updated_at",
     "trg_job_tasks_updated_at",
@@ -88,11 +89,22 @@ def test_initial_migration_upgrades_and_downgrades_cleanly(migration_engine: Eng
                 text("SELECT tablename FROM pg_tables WHERE schemaname = 'public'")
             )
         }
+        page_indexes = {
+            row[0]
+            for row in connection.execute(
+                text("SELECT indexname FROM pg_indexes WHERE tablename = 'pages'")
+            )
+        }
+        page_unique = connection.execute(
+            text("SELECT 1 FROM pg_constraint WHERE conname = 'ux_pages_file_page'")
+        ).first()
 
     assert extension is not None, "btree_gist extension was not created"
     assert function is not None, "set_updated_at() was not created"
     assert triggers == TRIGGER_NAMES
     assert constraint is not None, "segments exclusion constraint was not created"
+    assert {"ix_pages_file", "ix_pages_status"} <= page_indexes
+    assert page_unique is not None, "pages unique key was not created"
     for table in (
         "clients",
         "api_keys",
@@ -101,6 +113,7 @@ def test_initial_migration_upgrades_and_downgrades_cleanly(migration_engine: Eng
         "jobs",
         "submissions",
         "files",
+        "pages",
         "segments",
         "documents",
         "job_tasks",
@@ -123,6 +136,16 @@ def test_initial_migration_upgrades_and_downgrades_cleanly(migration_engine: Eng
         function = connection.execute(
             text("SELECT 1 FROM pg_proc WHERE proname = 'set_updated_at'")
         ).first()
+        triggers = {
+            row[0]
+            for row in connection.execute(
+                text(
+                    "SELECT tgname FROM pg_trigger "
+                    "WHERE NOT tgisinternal AND tgname LIKE 'trg_%_updated_at'"
+                )
+            )
+        }
 
     assert remaining == set()
     assert function is None
+    assert triggers == set()

@@ -200,8 +200,10 @@ Query parameters:
 | `include` | `documents,conflicts,decision` | Comma list: `documents`, `conflicts`, `checks`, `provenance`, `review`, `decision`. |
 | `document_id` | — | Restrict `documents` to one id. |
 
-The result contains exactly one output object per document submitted in **this** submission,
-including duplicates. Job-wide conflicts involving any of those documents are included.
+The result contains exactly one output object per document row produced from **this** submission's
+files — that is, one per segment. A duplicate part produces no document row and is reported only
+through `duplicate_documents`; an earlier submission's documents are never re-listed. Job-wide
+conflicts involving any of those documents are included.
 
 #### Processing response
 

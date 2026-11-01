@@ -53,6 +53,16 @@ def get(session: Session, file_id: str) -> File | None:
     return session.get(File, file_id)
 
 
+def get_for_update(session: Session, file_id: str) -> File | None:
+    """Lock the file row for the duration of preparation.
+
+    Two delivery attempts for the same file cannot both write a page/segment set.
+    """
+
+    stmt = select(File).where(File.id == file_id).with_for_update()
+    return session.execute(stmt).scalars().first()
+
+
 def list_for_submission(session: Session, submission_id: str) -> list[File]:
     stmt = (
         select(File).where(File.submission_id == submission_id).order_by(File.created_at, File.id)

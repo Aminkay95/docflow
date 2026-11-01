@@ -323,6 +323,7 @@ CREATE TABLE pages (
     rotation_deg        numeric(6,2) NOT NULL DEFAULT 0,
     text_layer_present  boolean NOT NULL DEFAULT false,
     text_layer_chars    integer NOT NULL DEFAULT 0 CHECK (text_layer_chars >= 0),
+    text_layer          text,
     legibility_score    numeric(5,4) CHECK (legibility_score BETWEEN 0 AND 1),
     conditioning        jsonb NOT NULL DEFAULT '{}'::jsonb,
     conditioning_version text,
@@ -332,9 +333,10 @@ CREATE TABLE pages (
     image_key           text,
     thumbnail_key       text,
     created_at          timestamptz NOT NULL DEFAULT now(),
+    updated_at          timestamptz NOT NULL DEFAULT now(),
     conditioned_at      timestamptz,
     purged_at           timestamptz,
-    UNIQUE (file_id, page_index)
+    CONSTRAINT ux_pages_file_page UNIQUE (file_id, page_index)
 );
 
 CREATE INDEX ix_pages_file ON pages (file_id, page_index);
@@ -827,7 +829,7 @@ DECLARE
     table_name text;
 BEGIN
     FOREACH table_name IN ARRAY ARRAY[
-        'clients', 'reviewers', 'jobs', 'segments', 'documents',
+        'clients', 'reviewers', 'jobs', 'pages', 'segments', 'documents',
         'field_values', 'conflicts', 'review_items', 'trust_records', 'job_tasks'
     ] LOOP
         EXECUTE format(

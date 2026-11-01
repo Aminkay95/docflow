@@ -152,9 +152,7 @@ sequenceDiagram
     W->>S: get source
     W->>W: rasterise, condition, score legibility
     W->>P: write pages; mark unreadable pages
-    W->>P: enqueue segment_file
-    W->>P: claim segment_file
-    W->>W: always-on segmentation
+    W->>W: always-on segmentation (inline in prepare_file)
     W->>P: write segments; enqueue extract_segment per segment
     W->>P: claim extract_segment
     W->>M: text layer / PaddleOCR / vision per routing policy
@@ -191,7 +189,8 @@ stored object and no job.
 The worker:
 
 1. Parses the container with pypdfium2.
-2. Rasterises each page at 300 DPI (configurable; 200 DPI for thumbnails).
+2. Rasterises each page at 300 DPI (configurable). Thumbnails are capped by their long edge
+   (512 px by default), not rendered as a second near-full-size raster.
 3. Detects and corrects orientation, skew, crop, DPI and noise with OpenCV.
 4. Computes a legibility score from contrast, blur, skew, text density and OCR confidence.
 5. Marks a page `unreadable` with a reason when correction does not save it. Unreadable pages are
@@ -202,13 +201,16 @@ Page images, thumbnails and crops are stored; the source file remains untouched.
 ### 6.3 Segmentation
 
 Segmentation always runs, never conditionally. A cheap deterministic classifier scores each page
-against the document-type lexicon and layout signals. A vision classifier is called only when the
-deterministic score is below threshold or tied. Pages are grouped into contiguous segments; every
-page is covered exactly once.
+against the document-type lexicon using the page's embedded text only. A page that ties, falls below
+the configured confidence floor, or has no text is `unknown`. Pages are grouped into contiguous
+segments; every page is covered exactly once. The vision fallback for below-threshold or unreadable
+pages arrives with reader routing (6.4); this stage makes no model calls.
 
-The output is a list of `(page_start, page_end, document_type, confidence, fingerprint)`. Unknown or
-ambiguous pages are kept as `unknown` segments and routed to review. Segmentation never infers a
-job relationship; it only splits a file.
+The output is a list of `(page_start, page_end, document_type, confidence, fingerprint)`. An
+`unknown` page after a confident page inherits that page's type as a continuation and merges into its
+segment; `unknown` pages before any confident page stay `unknown`. `unknown` segments are routed to
+review only once checks and decisions exist. Segmentation never infers a job relationship; it only
+splits a file.
 
 ### 6.4 Reader routing
 

@@ -9,10 +9,13 @@ from sqlalchemy.orm import Session
 
 from trade_extract.config import Settings
 from trade_extract.db.models.client import Client
+from trade_extract.db.models.document import Document
 from trade_extract.db.models.file import File
 from trade_extract.db.models.job import Job
 from trade_extract.db.models.policy import Policy
+from trade_extract.db.models.segment import Segment
 from trade_extract.db.models.submission import Submission
+from trade_extract.db.repositories import documents as documents_repo
 from trade_extract.db.repositories import files as files_repo
 from trade_extract.db.repositories import jobs as jobs_repo
 from trade_extract.db.repositories import policies as policies_repo
@@ -403,6 +406,52 @@ def accept(
     return accepted_from_submission(submission, job, settings)
 
 
+def _document_object(
+    document: Document,
+    segment: Segment,
+    file_row: File,
+    *,
+    submission: Submission,
+    job: Job,
+) -> dict[str, Any]:
+    """One document envelope for the polling result.
+
+    Extraction has not run in this slice: fields, tables, extension, checks and the
+    decision stay null. Hashes are stored bare and rendered with ``sha256:``.
+    """
+
+    return {
+        "document_id": document.id,
+        "result_id": submission.result_id,
+        "job_id": job.id,
+        "job_ref": job.job_ref,
+        "file_id": file_row.id,
+        "segment_id": segment.id,
+        "document_type": document.document_type,
+        "document_type_confidence": float(segment.confidence),
+        "schema_version": None,
+        "status": document.status,
+        "source": {
+            "filename": file_row.filename,
+            "content_type": file_row.content_type,
+            "file_hash": f"sha256:{file_row.sha256}",
+            "document_hash": f"sha256:{document.document_hash}",
+            "page_start": document.page_start,
+            "page_end": document.page_end,
+            "page_count": document.page_end - document.page_start + 1,
+        },
+        "fields": None,
+        "tables": {},
+        "extension": {},
+        "checks": None,
+        "conflicts": [],
+        "decision": None,
+        "review": {"extraction_open": False, "conflict_open": False},
+        "created_at": document.created_at,
+        "extracted_at": document.extracted_at,
+    }
+
+
 def build_result(
     session: Session,
     submission: Submission,
@@ -410,12 +459,11 @@ def build_result(
     include: set[str] | None = None,
     document_id: str | None = None,
 ) -> dict[str, Any]:
-    """Assemble the envelope-only result view for this submission.
+    """Assemble the result view for this submission.
 
-    No document rows exist in this story: ``documents`` and ``conflicts`` are empty
-    until segmentation lands. Counts and status still make the async lifecycle
-    observable. ``include`` and ``document_id`` are validated and applied now so the
-    response shape does not change when documents arrive.
+    Documents are joined from persisted document, segment and file rows. When no
+    document rows exist (a duplicate-only submission, or a failure before
+    preparation) the story-1 file-count semantics stay.
     """
 
     job = session.get(Job, submission.job_id)
@@ -427,19 +475,56 @@ def build_result(
     file_rows = files_repo.list_for_submission(session, submission.id)
     included = include if include is not None else {"documents", "conflicts", "decision"}
 
+    document_rows = documents_repo.list_for_submission(session, submission.id)
     processed_files = [row for row in file_rows if row.status == "processed"]
     failed_files = [row for row in file_rows if row.status == "failed"]
     pages_total = sum(row.page_count or 0 for row in file_rows)
     pages_read = sum(row.page_count or 0 for row in processed_files)
-    documents_completed = submission.duplicate_count + len(processed_files)
-    documents_failed = len(failed_files)
+
+    if document_rows:
+        documented_file_ids = {file_row.id for _, _, file_row in document_rows}
+        pending_without_documents = len(
+            [
+                row
+                for row in file_rows
+                if row.status in ("received", "processing") and row.id not in documented_file_ids
+            ]
+        )
+        failed_without_documents = len(
+            [row for row in failed_files if row.id not in documented_file_ids]
+        )
+        duplicates = submission.duplicate_count
+        documents_total = (
+            len(document_rows) + pending_without_documents + failed_without_documents + duplicates
+        )
+        documents_completed = (
+            sum(
+                1
+                for document, _, _ in document_rows
+                if document.status not in ("failed", "unreadable")
+            )
+            + duplicates
+        )
+        documents_failed = (
+            sum(
+                1 for document, _, _ in document_rows if document.status in ("failed", "unreadable")
+            )
+            + failed_without_documents
+        )
+    else:
+        documents_total = submission.document_count
+        documents_completed = submission.duplicate_count + len(processed_files)
+        documents_failed = len(failed_files)
 
     decision = None
     if submission.status == "failed":
         reason = submission.error_message or "the submission failed before producing a result"
         decision = {"value": "failed", "route": "none", "reasons": [reason]}
 
-    documents: list[dict[str, Any]] = []
+    documents = [
+        _document_object(document, segment, file_row, submission=submission, job=job)
+        for document, segment, file_row in document_rows
+    ]
     if document_id is not None:
         documents = [row for row in documents if row.get("document_id") == document_id]
 
@@ -449,8 +534,8 @@ def build_result(
         "job_ref": job.job_ref,
         "status": submission.status,
         "progress": {
-            "documents_total": submission.document_count,
-            "documents_completed": min(documents_completed, submission.document_count),
+            "documents_total": documents_total,
+            "documents_completed": min(documents_completed, documents_total),
             "documents_failed": documents_failed,
             "pages_total": pages_total,
             "pages_read": pages_read,

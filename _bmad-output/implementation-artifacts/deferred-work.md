@@ -101,3 +101,11 @@ source_spec: `1-api-contract-async-lifecycle-idempotency-and-refusal-guardrails.
 severity: low
 reason: The intent fixes the validation order but not which of two simultaneously broken rules wins inside one request; a test would enshrine an implementation choice rather than a documented requirement.
 status: open
+
+### DW-14: The file row lock and its database transaction are held across the whole preparation pipeline, including source download, full rasterisation, two storage uploads per page and segmentation.
+origin: spec-deferred 34f3bfa37c4c
+location: src/trade_extract/workers/handlers/prepare_file.py:136
+source_spec: `2-page-model-and-always-on-segmentation.md`
+severity: low
+reason: `prepare_file.handle` calls `files_repo.get_for_update` before `_download_source` and `_render_and_store`, and the runner commits only after the handler returns. A large PDF at 300 DPI can therefore hold the lock and a pooled connection for minutes. Correctness is preserved (two deliveries cannot write two page sets) and the documented v1 deploy runs one worker, but throughput and connection-pool pressure need a later redesign — render outside the lock, then lock and re-check for an existing page set before writing.
+status: open

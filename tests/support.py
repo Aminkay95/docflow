@@ -154,6 +154,10 @@ def temp_snapshot() -> set[str]:
     return {str(path) for path in Path(tempfile.gettempdir()).glob("trade-extract-upload-*")}
 
 
+def prepare_temp_snapshot() -> set[str]:
+    return {str(path) for path in Path(tempfile.gettempdir()).glob("trade-extract-prepare-*")}
+
+
 def assert_no_envelope_content(payload: dict[str, Any]) -> None:
     text = str(payload)
     assert "page image" not in text.lower()

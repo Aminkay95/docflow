@@ -26,6 +26,16 @@ def source_key(*, client_id: str, job_id: str, file_id: str, extension: str) -> 
     return f"clients/{client_id}/jobs/{job_id}/files/{file_id}/source.{extension}"
 
 
+def page_image_key(*, client_id: str, job_id: str, file_id: str, page_index: int) -> str:
+    """Rendered page image; JPEG because the render quality knob is honoured."""
+
+    return f"clients/{client_id}/jobs/{job_id}/files/{file_id}/pages/{page_index:04d}.jpg"
+
+
+def page_thumbnail_key(*, client_id: str, job_id: str, file_id: str, page_index: int) -> str:
+    return f"clients/{client_id}/jobs/{job_id}/files/{file_id}/pages/{page_index:04d}.thumb.jpg"
+
+
 def _normalise_key(key: str) -> PurePosixPath:
     candidate = PurePosixPath(key.replace("\\", "/"))
     if candidate.is_absolute() or any(part in ("..", "") for part in candidate.parts):

@@ -170,9 +170,12 @@
 - `page_index` is zero-based within the source file.
 - `bbox` is normalized to 0–1, origin top-left. The client multiplies by the rendered page width and
   height. `page_width_pt` and `page_height_pt` preserve the original PDF points for exact overlays.
-- `document_hash` is the stable segment identity: `sha256(file_hash + page_start + page_end +
-  document_type)`. `source.file_hash` identifies the original file. Together they let a client
-  overlay provenance on its own copy after the platform has purged the file.
+- `document_hash` is the stable segment identity:
+  `sha256("<file_sha256_hex>:<page_start>:<page_end>:<document_type>")`, where `file_sha256_hex` is
+  the bare 64-character file hash and the page range is 0-based inclusive. Stored hashes are bare
+  hex; the API renders them as `sha256:<hex>`. `source.file_hash` identifies the original file.
+  Together they let a client overlay provenance on its own copy after the platform has purged the
+  file.
 - `reader` is `text_layer`, `paddle`, `vision` or `human`.
 - `confidence` is evidence for ordering, never for the pass gate.
 

@@ -60,3 +60,27 @@ def test_production_accepts_real_secrets(tmp_path: Path) -> None:
 
 def test_development_allows_local_http_webhooks(tmp_path: Path) -> None:
     assert _settings(tmp_path).require_https_webhooks is False
+
+
+def test_page_and_segmentation_defaults_are_documented_settings(tmp_path: Path) -> None:
+    settings = _settings(tmp_path)
+    assert settings.page_render_dpi == 300
+    assert settings.page_thumbnail_max_px == 512
+    assert settings.page_image_quality == 85
+    assert settings.segmentation_min_confidence == 0.55
+
+
+@pytest.mark.parametrize(
+    "overrides",
+    [
+        {"page_render_dpi": 0},
+        {"page_thumbnail_max_px": 0},
+        {"page_image_quality": 101},
+        {"segmentation_min_confidence": 1.5},
+    ],
+)
+def test_page_and_segmentation_settings_are_validated(
+    tmp_path: Path, overrides: dict[str, object]
+) -> None:
+    with pytest.raises(ValidationError):
+        _settings(tmp_path, **overrides)

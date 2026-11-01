@@ -185,7 +185,7 @@ Rough unit economics for one page:
 | Vision tokens | One page image ≈ 1024 tokens; crops add more. |
 | Text tokens | Schema + OCR text + repair attempts. |
 | OCR CPU | PaddleOCR ~0.5–2 s/page on CPU, more for tables. |
-| Storage | Source + page PNG + thumbnails ≈ 2–6 MB/page. |
+| Storage | Source + quality-85 JPEG page image + thumbnail ≈ 2–6 MB/page. |
 | Review | The dominant cost. A document that costs $0.03 in tokens and 4 minutes of a clerk is a $2 document. |
 
 Capacity rules:

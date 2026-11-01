@@ -62,7 +62,14 @@ def test_accept_poll_worker_complete(api: ApiHarness) -> None:
     assert completed.status_code == 200
     body = completed.json()
     assert body["status"] == "completed"
-    assert body["documents"] == []
+    assert len(body["documents"]) == 1
+    document = body["documents"][0]
+    assert document["document_type"] == "commercial_invoice"
+    assert document["status"] == "queued"
+    assert document["source"]["page_start"] == 0
+    assert document["source"]["page_end"] == 0
+    assert document["source"]["document_hash"].startswith("sha256:")
+    assert 0.0 <= document["document_type_confidence"] <= 1.0
     assert body["conflicts"] == []
     assert body["decision"] is None
     assert body["completed_at"] is not None
@@ -259,9 +266,10 @@ def test_document_idempotency_is_enforced_by_schema(api: ApiHarness) -> None:
             )
             session.flush()
 
-        add_document(0, "hash-a", "same-key")
+        # Pages 1 and 2 are free: preparation already owns segment 0-0.
+        add_document(1, "hash-a", "same-key")
         with pytest.raises(IntegrityError):
-            add_document(1, "hash-b", "same-key")
+            add_document(2, "hash-b", "same-key")
         session.rollback()
 
 

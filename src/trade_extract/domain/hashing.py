@@ -101,6 +101,23 @@ def document_idempotency_key(
     return hashlib.sha256(raw.encode("utf-8")).hexdigest()
 
 
+def document_hash(
+    *,
+    source_file_sha256: str,
+    page_start: int,
+    page_end: int,
+    document_type: str,
+) -> str:
+    """Stable segment identity: ``sha256(file_sha256:page_start:page_end:type)``.
+
+    Stored bare (64 hex characters); the result envelope renders it with a
+    ``sha256:`` prefix.
+    """
+
+    raw = ":".join([source_file_sha256, str(page_start), str(page_end), str(document_type)])
+    return sha256_bytes(raw.encode("utf-8"))
+
+
 def merge_fingerprints(parts: Mapping[str, str]) -> str:
     """Deterministic fingerprint over named digests (helper for outbox rows)."""
 
