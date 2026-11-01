@@ -23,11 +23,8 @@ htmlcov/
 # Agent CLI skill trees (junction to .agents/skills)
 .claude/
 
-# bmad-loop local state (policy + runs are per-machine)
-.bmad-loop/policy.toml
-.bmad-loop/runs/
-.bmad-loop/cache/
-.bmad-loop/archive/
+# bmad-loop local state (policy, runs, driver scripts are per-machine)
+.bmad-loop/
 _bmad/render/
 
 # OS
