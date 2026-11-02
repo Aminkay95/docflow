@@ -80,3 +80,13 @@ class DocumentType(StrEnum):
     VERIFICATION_MEMO = "verification_memo"
     PACKING_LIST = "packing_list"
     UNKNOWN = "unknown"
+
+
+class DocumentStatus(StrEnum):
+    QUEUED = "queued"
+    PROCESSING = "processing"
+    EXTRACTED = "extracted"
+    REVIEW_REQUIRED = "review_required"
+    RESOLVED = "resolved"
+    UNREADABLE = "unreadable"
+    FAILED = "failed"

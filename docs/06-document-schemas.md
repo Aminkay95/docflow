@@ -13,7 +13,9 @@
   semantics; custom entry follows the WCO Data Model; the local types put market detail in
   `extension`.
 - **National context is a field value, never a field name.** No `kenya_vat`; use
-  `tax.category` and `tax.rate` with the country in the address.
+  `tax.category` and `tax.rate` with the country in the address. Extensions are namespaced by a
+  lowercase ISO 3166-1 alpha-2 code (`extension.ke.*`) or `extension.any.*`, and **v1 extension
+  leaves are strings**: a typed extension needs a declared spec, not a new field name.
 - **Unknown is explicit.** A page that cannot be classified yields `document_type: "unknown"` and a
   review item, never a guessed schema.
 
@@ -350,11 +352,11 @@ Market-specific invoice detail only:
 
 | Path | Type | Notes |
 |---|---|---|
-| `extension.kenya.pin` | string | Supplier or buyer PIN if printed; country is data. |
-| `extension.kenya.vat_number` | string | |
-| `extension.kenya.idf_reference` | string | Import declaration factor reference. |
-| `extension.kenya.pvoc_reference` | string | |
-| `extension.kenya.remarks` | string | |
+| `extension.ke.pin` | string | Supplier or buyer PIN if printed; country is data. |
+| `extension.ke.vat_number` | string | |
+| `extension.ke.idf_reference` | string | Import declaration factor reference. |
+| `extension.ke.pvoc_reference` | string | |
+| `extension.ke.remarks` | string | |
 | `extension.any.other` | string | Free-form, one path per note. |
 
 ## 6. Proforma invoice
@@ -373,7 +375,7 @@ Fields are identical to the commercial invoice with these differences:
 | `proforma.valid_until` | Optional; a proforma-specific field. |
 | `bill_of_lading.number` | Forbidden; if printed, the value is an extension note and a check warns. |
 | `shipment.vessel`, `shipment.voyage` | Optional; often absent before booking. |
-| `invoice.*` paths | Replaced by `proforma.*` for number, issue date, due date, type code and currency. |
+| `invoice.*` paths | Replaced by `proforma.*` for every one of them: number, issue date, due date, type code, currency, note and tax point date. |
 | All line, party, totals and tax paths | Same as invoice. |
 
 The schema registry maps `proforma_invoice` to `proforma.peppol-1.0`; the model reuses the invoice
@@ -472,8 +474,8 @@ party presence, port consistency. Everything routes to review.
 | `charges[n].currency` | No | enum | |
 | `instructions` | No | string | Free text. |
 | `signature.name` | No | string | |
-| `extension.kenya.port` | string | Country is data; port name is the value. |
-| `extension.kenya.kwatos_reference` | string | |
+| `extension.ke.port` | string | Country is data; port name is the value. |
+| `extension.ke.kwatos_reference` | string | |
 
 Checks are advisory: B/L presence, container check digits, date ordering, free-time plausibility.
 
@@ -508,8 +510,8 @@ terminal.
 | `movement.direction` | No | enum | `in`, `out`, `transfer`. |
 | `escort.required` | No | boolean | |
 | `remarks` | No | string | |
-| `extension.kenya.kwatos_reference` | string | |
-| `extension.kenya.terminal_code` | string | |
+| `extension.ke.kwatos_reference` | string | |
+| `extension.ke.terminal_code` | string | |
 
 Checks are advisory: container check digits, validity window, direction consistency, required
 release reference.
@@ -605,9 +607,9 @@ Every figure is read as stated. The platform does not compute duty, levies, VAT 
 | `permits.import_permits[0]` | string | Indexed. |
 | `permits.certificate_of_origin` | string | |
 | `permits.preferential_treatment` | string | As stated. |
-| `extension.kenya.officer_remarks` | string | |
-| `extension.kenya.verification_notes` | string | |
-| `extension.kenya.release_references[0]` | string | |
+| `extension.ke.officer_remarks` | string | |
+| `extension.ke.verification_notes` | string | |
+| `extension.ke.release_references[0]` | string | |
 
 Advisory checks: stated CIF equals stated FOB + freight + insurance; duty/levy/VAT arithmetic where
 all components are stated; line values sum to customs value; HS structure; container check digits;
@@ -642,8 +644,8 @@ the set. The schema tolerates near-free-form content.
 | `officer.name` | No | string | |
 | `officer.signature` | No | string | |
 | `remarks` | No | string | |
-| `extension.kenya.port` | string | |
-| `extension.kenya.cfs_code` | string | |
+| `extension.ke.port` | string | |
+| `extension.ke.cfs_code` | string | |
 
 The model allows unknown additional paths under `extension.any.*` with provenance, so a memo that
 does not fit the named fields is still representable without inventing a schema.
@@ -652,9 +654,11 @@ does not fit the named fields is still representable without inventing a schema.
 
 > **Spec gap.** The SPEC names seven document types but CAP-2 requires a PDF containing an invoice,
 > a packing list and a B/L to yield three documents, and CAP-11 requires a 200-row packing list to be
-> read completely. A packing list is therefore a first-class type. This document proposes
-> `packing_list` as an eighth type; if the product must hold to seven, CAP-2 and CAP-11 need
-> amendment. See [ADR-013](08-operations-and-decisions.md#adr-013-packing-list-is-a-proposed-eighth-type).
+> read completely. A packing list is therefore a first-class type in principle. **Product decision
+> (2026-11-01): deferred.** v1 ships the seven registered types; the registry accepts an eighth
+> additively, so `packing_list` can be added without a pipeline branch. Until it is, a segment
+> classified as a packing list has no schema and routes to review, and the packing-list rows of
+> CAP-2 and CAP-11 stay unimplemented. See [ADR-013](08-operations-and-decisions.md#adr-013-packing-list-is-a-proposed-eighth-type).
 
 **Spine:** proprietary extension block. **Schema version:** `packing_list.local-1.0`.
 **Review depth:** full review.
@@ -684,7 +688,7 @@ does not fit the named fields is still representable without inventing a schema.
 | `totals.gross_weight_kg` | No | decimal | |
 | `totals.net_weight_kg` | No | decimal | |
 | `totals.volume_m3` | No | decimal | |
-| `extension.kenya.cfs` | string | |
+| `extension.ke.cfs` | string | |
 
 Table completeness is mandatory:
 
@@ -760,6 +764,10 @@ Rules:
 
 ## 14. Schema registry and validation
 
+The v1 registry ships the seven types above. The `packing_list` entry below is a proposed addition,
+deliberately absent from the running registry until the product decision is made; a segment classified
+as a packing list therefore has no schema and routes to review.
+
 ```python
 DOCUMENT_SCHEMAS = {
     "commercial_invoice": SchemaSpec(
@@ -811,14 +819,17 @@ DOCUMENT_SCHEMAS = {
         checks="advisory",
         tables={"findings"},
     ),
-    "packing_list": SchemaSpec(
-        model=PackingList,
-        version="packing_list.local-1.0",
-        prompt="packing_list.md",
-        checks="advisory",
-        tables={"lines"},
-    ),
 }
+
+# Proposed addition, not part of the v1 registry (ADR-013, deferred 2026-11-01):
+#
+#     "packing_list": SchemaSpec(
+#         model=PackingList,
+#         version="packing_list.local-1.0",
+#         prompt="packing_list.md",
+#         checks="advisory",
+#         tables={"lines"},
+#     ),
 ```
 
 Validation loop:
@@ -829,8 +840,12 @@ Validation loop:
    capped at two attempts.
 4. Validate provenance coverage separately: every leaf path must have a `provenance` object with a
    page index and bbox.
-5. Validate table completeness: `row_count_extracted` must equal `row_count_stated` unless
-   `unresolved_rows` names the gap; `truncated` must be explicit.
+5. Validate table completeness: `row_count_extracted` must equal the number of rows actually
+   emitted, and must equal `row_count_stated` unless `unresolved_rows` names the gap; `truncated`
+   must be explicit and a truncated table is never accepted as complete. **Row indices identify
+   source rows, not dense output rows**, so emitted indices may skip exactly the rows named in
+   `unresolved_rows`, a row may not be both emitted and unresolved, and emitted plus unresolved rows
+   must partition the stated range.
 6. On success, persist `field_values` and the immutable `documents.extraction` snapshot.
 7. On failure, persist an extraction review item with the validation errors. No partial output is
    promoted to a completed document.
@@ -902,7 +917,7 @@ same schema version; a change in meaning or a removed field requires a new `sche
     }
   },
   "extension": {
-    "extension.kenya.officer_remarks": {
+    "extension.ke.officer_remarks": {
       "kind": "scalar",
       "value": "Verified against invoice and packing list.",
       "value_type": "string",

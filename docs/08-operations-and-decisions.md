@@ -319,16 +319,17 @@ versioned.
 
 ### ADR-013: Packing list is a proposed eighth type
 
-**Decision:** Treat `packing_list` as a first-class document type in the schema registry, pending
-product sign-off.
+**Decision:** Deferred (product, 2026-11-01). v1 ships the seven named document types; `packing_list`
+is not registered. The schema registry accepts an eighth type additively, with no pipeline branch.
 
 **Why:** The SPEC names seven types, but CAP-2 requires a mixed PDF with a packing list to yield
 three documents, and CAP-11 requires a 200-row packing list to be read completely. Neither is
-implementable without a packing-list schema.
+fully implementable without a packing-list schema, so the gap is recorded rather than silently closed.
 
-**Consequence:** If the product must hold to seven, CAP-2 and CAP-11 must be amended and the packing
-list content folded into an invoice extension. That is a worse contract and should be an explicit
-product decision, not a silent omission.
+**Consequence:** A segment classified as `packing_list` segments correctly but has no schema, so it
+routes to review. The packing-list rows of CAP-2 and CAP-11 stay unimplemented until the decision is
+made. Folding packing-list content into an invoice extension remains rejected: it would weaken table
+completeness guarantees.
 
 ### ADR-014 — Terminal means completed or failed with no open review
 
@@ -346,7 +347,7 @@ job starts it at resolution. A failed job is terminal after retries are exhauste
 
 | ID | Issue | Current resolution | Owner |
 |---|---|---|---|
-| A-01 | Packing list is required by CAP-2/CAP-11 but absent from the seven types. | Proposed eighth type, ADR-013. | Product |
+| A-01 | Packing list is required by CAP-2/CAP-11 but absent from the seven types. | Deferred by product on 2026-11-01; v1 ships seven, packing-list segments route to review. ADR-013. | Product |
 | A-02 | “v1 runs entirely at full review” vs the invoice pass gate. | Trust ramp is off; invoice may still pass on checks. The statement is read as “no trust-based reduction”, not “no deterministic pass”. | Product |
 | A-03 | “Terminal means posted or review-resolved”, but v1 has no ERP posting. | Completion is delivery; ADR-014. | Product / engineering |
 | A-04 | Email may alert, but no email provider is in the stack. | v1 has no email; the review console is the alert surface. Add an email adapter later without changing resolution. | Product |
