@@ -71,3 +71,30 @@ def test_numeric_span_cannot_end_inside_a_larger_amount():
     page = PageInput(0, characters=chars)
     assert not verify_text_box(page, "10", BBox(x0=0, y0=0, x1=0.2, y1=0.1))
     assert verify_text_box(page, "100", BBox(x0=0, y0=0, x1=0.3, y1=0.1))
+
+
+def test_direct_text_reader_excludes_conditioning_refusals():
+    import json
+
+    from trade_extract.domain.inference import InferenceRequest, ProviderResult
+    from trade_extract.providers.mock import MockProvider
+    from trade_extract.services.readers.text_layer import TextLayerReader
+
+    provider = MockProvider({("commercial_invoice", "a" * 64): [ProviderResult({}, "mock")]})
+    request = InferenceRequest("commercial_invoice", "a" * 64, {}, "")
+    box = BBox(x0=0.1, y0=0.1, x1=0.2, y1=0.2)
+    good = PageInput(0, characters=(TextCharacter("GOOD", box),))
+    bad = PageInput(
+        1,
+        characters=(TextCharacter("REFUSED", box),),
+        unreadable=False,
+        conditioning_status="unreadable",
+    )
+    reader = TextLayerReader()
+    assert reader.read(provider, request, (bad,)) is None
+    assert not provider.requests
+    reader.read(provider, request, (good, bad))
+    evidence = json.loads(provider.requests[0].evidence.split("Text geometry:\n")[1])
+    assert [entry["page_index"] for entry in evidence] == [0]
+    assert evidence[0]["characters"][0]["text"] == "GOOD"
+    assert "REFUSED" not in provider.requests[0].evidence

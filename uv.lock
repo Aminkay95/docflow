@@ -1362,8 +1362,14 @@ dependencies = [
 ]
 
 [package.optional-dependencies]
+conditioning = [
+    { name = "numpy" },
+    { name = "opencv-python-headless" },
+]
 dev = [
     { name = "mypy" },
+    { name = "numpy" },
+    { name = "opencv-python-headless" },
     { name = "pypdf" },
     { name = "pytest" },
     { name = "pytest-cov" },
@@ -1388,7 +1394,11 @@ requires-dist = [
     { name = "fastapi", specifier = ">=0.115" },
     { name = "httpx", specifier = ">=0.27" },
     { name = "mypy", marker = "extra == 'dev'", specifier = ">=1.10" },
+    { name = "numpy", marker = "extra == 'conditioning'", specifier = ">=1.26" },
+    { name = "numpy", marker = "extra == 'dev'", specifier = ">=1.26" },
     { name = "numpy", marker = "extra == 'ocr'", specifier = ">=1.26" },
+    { name = "opencv-python-headless", marker = "extra == 'conditioning'", specifier = ">=4.9" },
+    { name = "opencv-python-headless", marker = "extra == 'dev'", specifier = ">=4.9" },
     { name = "opencv-python-headless", marker = "extra == 'ocr'", specifier = ">=4.9" },
     { name = "paddleocr", marker = "extra == 'ocr'", specifier = ">=2.7" },
     { name = "pillow", specifier = ">=10.3" },
@@ -1406,7 +1416,7 @@ requires-dist = [
     { name = "sqlalchemy", specifier = ">=2.0.30" },
     { name = "uvicorn", extras = ["standard"], specifier = ">=0.30" },
 ]
-provides-extras = ["dev", "s3", "ocr"]
+provides-extras = ["dev", "s3", "conditioning", "ocr"]
 
 [[package]]
 name = "typing-extensions"

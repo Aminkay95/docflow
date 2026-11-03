@@ -189,3 +189,53 @@ def test_missing_source_is_a_processing_failure(tmp_path: Path) -> None:
         )
     assert caught.value.code == "processing_failed"
     assert "missing.pdf" in caught.value.message
+
+
+def test_image_exif_hint_survives_jpeg_rendering(tmp_path):
+    from PIL import Image
+
+    from trade_extract.services.page_model import render_container
+
+    image = Image.new("RGB", (200, 300), "white")
+    exif = Image.Exif()
+    exif[274] = 6
+    path = tmp_path / "oriented.jpg"
+    image.save(path, exif=exif)
+    page = next(
+        render_container(
+            path, "image/jpeg", document="photo", dpi=300, thumbnail_max_px=100, quality=85
+        )
+    )
+    assert page.exif_orientation == 6
+    assert (page.width_px, page.height_px) == (200, 300)
+
+
+@pytest.mark.parametrize(
+    "orientation,expected_size,expected_centre",
+    [(6, (300, 200), (250, 30)), (8, (300, 200), (50, 170)), (3, (200, 300), (170, 250))],
+)
+def test_tiff_orientation_is_applied_once(tmp_path, orientation, expected_size, expected_centre):
+    import io
+
+    import numpy as np
+    from PIL import Image, ImageDraw
+
+    from trade_extract.config import Settings
+    from trade_extract.services.conditioning import condition_page
+
+    image = Image.new("RGB", (200, 300), "white")
+    ImageDraw.Draw(image).rectangle((20, 40, 40, 60), fill="red")
+    path = tmp_path / "oriented.tiff"
+    image.save(path, tiffinfo={274: orientation})
+    page = next(
+        render_container(
+            path, "image/tiff", document="photo", dpi=300, thumbnail_max_px=100, quality=95
+        )
+    )
+    assert page.exif_orientation == 1
+    assert (page.width_px, page.height_px) == expected_size
+    result = condition_page(page, Settings())
+    output = np.array(Image.open(io.BytesIO(result.image_bytes)))
+    ys, xs = np.where((output[:, :, 0] > 180) & (output[:, :, 1] < 80) & (output[:, :, 2] < 80))
+    assert (xs.mean(), ys.mean()) == pytest.approx(expected_centre, abs=2)
+    assert not any(op.startswith("exif_orientation") for op in result.operations)

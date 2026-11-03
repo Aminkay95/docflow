@@ -42,6 +42,7 @@ class PageRendering:
     rotation_deg: float
     text: str
     characters: tuple[TextCharacter, ...] = ()
+    exif_orientation: int = 1
 
 
 @dataclass(frozen=True)
@@ -191,6 +192,7 @@ def render_container(
     dpi: int,
     thumbnail_max_px: int,
     quality: int,
+    max_pixels: int = _MAX_IMAGE_PIXELS,
 ) -> Iterator[PageRendering]:
     """Yield one rendering per page, in source order, one page at a time.
 
@@ -211,6 +213,7 @@ def render_container(
             dpi=dpi,
             thumbnail_max_px=thumbnail_max_px,
             quality=quality,
+            max_pixels=max_pixels,
         )
         return
     yield from _render_image(
@@ -219,6 +222,7 @@ def render_container(
         dpi=dpi,
         thumbnail_max_px=thumbnail_max_px,
         quality=quality,
+        max_pixels=max_pixels,
     )
 
 
@@ -291,6 +295,7 @@ def _render_pdf(
     dpi: int,
     thumbnail_max_px: int,
     quality: int,
+    max_pixels: int = _MAX_IMAGE_PIXELS,
 ) -> Iterator[PageRendering]:
     import pypdfium2 as pdfium
 
@@ -310,10 +315,10 @@ def _render_pdf(
                 page_width_pt, page_height_pt = page.get_size()
                 pixel_width = math.ceil(page_width_pt * scale)
                 pixel_height = math.ceil(page_height_pt * scale)
-                if pixel_width * pixel_height > _MAX_IMAGE_PIXELS:
+                if pixel_width * pixel_height > max_pixels:
                     raise errors.processing_failed(
                         document,
-                        "the rendered page exceeds the 100-megapixel budget; "
+                        "the rendered page exceeds the conditioning pixel budget; "
                         "lower PAGE_RENDER_DPI or split the file",
                     )
                 text_page = page.get_textpage()
@@ -361,6 +366,7 @@ def _render_image(
     dpi: int,
     thumbnail_max_px: int,
     quality: int,
+    max_pixels: int = _MAX_IMAGE_PIXELS,
 ) -> Iterator[PageRendering]:
     from PIL import Image, UnidentifiedImageError
 
@@ -374,7 +380,13 @@ def _render_image(
                 if index:
                     source.seek(index)
                 frame_dpi = _source_dpi(source, dpi)
+                if source.width * source.height > max_pixels:
+                    raise errors.processing_failed(document, "image_pixel_budget")
+                exif_orientation = int(source.getexif().get(274, 1))
                 frame = source.convert("RGB")
+                if source.format == "TIFF":
+                    # Pillow applies TIFF orientation while loading the frame.
+                    exif_orientation = 1
                 width_px, height_px = frame.size
                 if width_px <= 0 or height_px <= 0:
                     raise errors.processing_failed(document, "the frame has no pixels")
@@ -388,6 +400,7 @@ def _render_image(
                     height_px=height_px,
                     dpi=frame_dpi,
                     rotation_deg=0.0,
+                    exif_orientation=exif_orientation,
                     text="",
                 )
     except errors.DomainError:

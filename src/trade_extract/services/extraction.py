@@ -123,9 +123,15 @@ def extract(
     if not 0 <= max_repairs <= 2:
         raise ValueError("max_repairs must be between zero and two")
     spec = get_schema(document_type)
-    usable = tuple(page for page in pages if not page.unreadable)
+    usable = tuple(page for page in pages if not page.is_unreadable)
+    unreadable_errors = tuple(
+        f"page:{page.page_index}:" + reason
+        for page in pages
+        if page.is_unreadable
+        for reason in (page.unreadable_reasons or ("unreadable",))
+    )
     if not usable:
-        return ExtractionOutcome("unreadable", errors=("no_readable_pages",))
+        return ExtractionOutcome("unreadable", errors=("no_readable_pages", *unreadable_errors))
     page_map = {page.page_index: page for page in usable}
     if len(page_map) != len(usable) or any(
         not source.page_start <= page.page_index <= source.page_end for page in usable
@@ -152,7 +158,11 @@ def extract(
         evidence_pages = {
             page.page_index
             for page in usable
-            if (page.image is not None if reader.name.value == "vision" else bool(page.characters))
+            if (
+                (page.image is not None and page.vision_ready)
+                if reader.name.value == "vision"
+                else bool(page.characters)
+            )
         }
         current = request
         for attempt in range(max_repairs + 1):
@@ -213,7 +223,9 @@ def extract(
                 break
             except ProviderError as exc:
                 return ExtractionOutcome(
-                    "extraction_failed", candidates=tuple(candidates), errors=(exc.code,)
+                    "extraction_failed",
+                    candidates=tuple(candidates),
+                    errors=(exc.code, *unreadable_errors),
                 )
             except (ValidationError, ValueError, TypeError) as exc:
                 if isinstance(exc, ExtractionGuard):
@@ -265,7 +277,9 @@ def extract(
                     )
                 if attempt == max_repairs:
                     return ExtractionOutcome(
-                        "extraction_failed", candidates=tuple(candidates), errors=errors
+                        "extraction_failed",
+                        candidates=tuple(candidates),
+                        errors=(*errors, *unreadable_errors),
                     )
                 current = replace(
                     request,
@@ -279,7 +293,14 @@ def extract(
                     ),
                 )
     if not documents:
-        return ExtractionOutcome("extraction_failed", errors=("no_reader_evidence",))
+        return ExtractionOutcome(
+            "unreadable" if unreadable_errors else "extraction_failed",
+            errors=("no_reader_evidence", *unreadable_errors),
+        )
+    if unreadable_errors:
+        return ExtractionOutcome(
+            "unreadable", candidates=tuple(candidates), errors=unreadable_errors
+        )
     merged = merge_candidates(candidates, select=select)
     # Table metadata is evidence too. Conflicting completeness claims must not be hidden.
     tables = documents[0].tables

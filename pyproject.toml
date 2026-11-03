@@ -26,6 +26,8 @@ dependencies = [
 
 [project.optional-dependencies]
 dev = [
+    "numpy>=1.26",
+    "opencv-python-headless>=4.9",
     "mypy>=1.10",
     "pypdf>=4.2",
     "pytest>=8.2",
@@ -35,6 +37,7 @@ dev = [
     "ruff>=0.5",
 ]
 s3 = ["boto3>=1.34"]
+conditioning = ["numpy>=1.26", "opencv-python-headless>=4.9"]
 ocr = [
     "numpy>=1.26",
     "opencv-python-headless>=4.9",

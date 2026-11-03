@@ -192,7 +192,7 @@ The worker:
 2. Rasterises each page at 300 DPI (configurable). Thumbnails are capped by their long edge
    (512 px by default), not rendered as a second near-full-size raster.
 3. Detects and corrects orientation, skew, crop, DPI and noise with OpenCV.
-4. Computes a legibility score from contrast, blur, skew, text density and OCR confidence.
+4. Computes the provisional `image-quality-v1` image heuristic from measured contrast, Laplacian variance, ink fraction, retained document dimensions and line skew. OCR confidence is unavailable and is not used.
 5. Marks a page `unreadable` with a reason when correction does not save it. Unreadable pages are
    never sent to a model.
 
@@ -439,3 +439,53 @@ hold a database transaction open.
 
 These are not gaps. They are choices that keep the system auditable and shippable. Each is revisited
 only when a measured constraint earns the complexity.
+
+
+### Implemented page conditioning (story 5)
+
+Every prepared page is conditioned before derivative storage. Pillow captures image EXIF before
+JPEG encoding; all eight supported EXIF layouts map source pixels to corrected pixels. PDFium has
+already applied PDF rotation, so conditioning never rotates it again. Deterministic horizontal line
+evidence supports small deskew (up to 12 degrees); geometry alone cannot establish upright versus
+upside-down text. That uncertainty is persisted. Strong sideways line evidence without a source
+hint is refused as `ambiguous_orientation`, rather than choosing a rotation direction.
+
+Perspective/border correction requires a unique convex bright sheet covering 50-95% of an image,
+with a uniform dark surround. Every discarded native pixel is checked, including pixels adjacent to the sheet; a small
+margin is retained in the derivative. Variable or marked surrounds that fail that check remain
+intact and receive an uncertain-border refusal. Uncertain content is never cropped. Deskew expands the canvas instead of clipping corners. Known excess DPI may be
+reduced toward PAGE_RENDER_DPI only while retaining the useful detail floor; pages are never upscaled. Low-strength bilateral denoise preserves
+colour and edges, with no component removal, stamp removal or binarization.
+
+The provisional defaults refuse retained document short edges below 600 px, 0.1 to 99.9 percentile contrast below
+25, Laplacian variance below 15, ink fraction below 0.001 or above 0.8, unsupported orientation and
+excessive skew. Metrics run at at most 1600 px on the long edge; decoded/derived pages are capped
+at 40 million pixels. `CONDITIONING_*` settings validate budgets and quality thresholds; effective
+values are persisted alongside each result. The score is the capped minimum ratio of contrast,
+blur and source size to their thresholds. It neither approves documents nor proves semantic
+readability. Defaults remain provisional until labelled-document evaluation in story 7.
+
+Page conditioning JSON retains operations, measurements, refusal reasons, version, effective policy,
+and normalized character boxes. Coordinates refer to the conditioned image, top-left, normalized
+0 to 1. A pair of 3 by 3 homographies maps pixel-edge points from the rendered source image to conditioned
+image and back, including perspective. Point/polygon mapping is reversible; an axis-aligned box
+maps to the enclosing box of its four transformed corners, so repeated box enclosing can expand.
+The original uploaded file and page/segment identities remain unchanged.
+
+Vision requires explicit current-version conditioned evidence and a transform, including direct
+reader calls and repairs. Every reader skips unreadable pages. A mixed segment retains readable
+candidates for diagnosis but cannot promote an extracted document when any page is unreadable.
+Preparation remains atomic and idempotent; this story does not activate document lifecycle tasks.
+
+
+Conditioning follow-up: TIFF orientation is consumed by Pillow during decode and is not applied a
+second time. Perspective sampling uses a conservative bound on the homography Jacobian over the
+retained sheet; output dimensions are reduced until local magnification respects
+CONDITIONING_MAX_ENLARGEMENT. Rotation canvas padding is excluded from that sampling bound.
+Retained sheet dimensions and final derivative dimensions both constrain the detail floor, so
+photo surrounds and DPI metadata cannot rescue or create resolution. Dominant vertical line
+evidence is compared against horizontal line strength; conflicting significant skew is an explicit
+unresolved-skew refusal. Supplied homographies must be finite, nonsingular, mutually inverse and
+free of an image-crossing projective horizon, and conditioned dimensions must match image metadata
+before direct vision dispatch or repair. Mixed-segment exits retain page refusal reasons alongside
+provider or validation diagnostics, including no-evidence outcomes.

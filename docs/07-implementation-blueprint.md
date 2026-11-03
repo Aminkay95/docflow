@@ -771,8 +771,8 @@ USER appuser
 CMD ["uv", "run", "uvicorn", "trade_extract.api.app:create_app", "--factory", "--host", "0.0.0.0", "--port", "8000"]
 ```
 
-`Dockerfile.worker` uses the same base but `uv sync --frozen --no-dev --extra worker --extra ocr`.
-It is the only image with PaddleOCR, OpenCV and pypdfium2. Build it separately so a change to OCR
+`Dockerfile.worker` uses the same base but installs `--extra conditioning --extra s3`.
+It is the image with OpenCV and pypdfium2; PaddleOCR is deferred. Build it separately so a change to OCR
 does not rebuild the API.
 
 `docker-compose.yml` (abridged):
@@ -918,3 +918,50 @@ provisional until the harness says otherwise.
 - `docker compose up` works from a clean clone with Docker only.
 - CI is green; the eval report exists; the retention and webhook failure tests pass.
 
+
+
+## Implemented conditioning contract (story 5)
+
+`domain.conditioning` contains immutable image-free results, measurements and projective geometry.
+`services.conditioning.condition_page(PageRendering, Settings)` lazily imports OpenCV, numpy and
+Pillow in the worker, bounds decode and analysis, and returns JPEG image/thumbnail derivatives.
+The worker image installs the `conditioning` extra without PaddleOCR. The API import contract also
+imports this service to ensure merely importing it never imports heavy libraries.
+
+Preparation calls conditioning for every page before storage. Existing page columns hold status,
+version, score, conditioning JSON, reason and conditioned timestamp; the page/segment/document
+replacement transaction and retry shortcut remain unchanged. Segmentation always uses original
+embedded text, including unreadable pages. Source bytes are never overwritten.
+
+The effective `CONDITIONING_*` quality/budget policy and output DPI, JPEG quality and thumbnail
+settings are stored per page. `image-quality-v1` measures
+99.9 minus 0.1 percentile contrast, Laplacian variance, fraction of pixels darker than 200, retained document short
+edge, and line skew. Score = min(1, contrast/min_contrast, blur/max(1,min_blur),
+retained_document_short_edge/min_short_edge); score is diagnostic, not a gate. Individual refusal reasons
+are preserved separately. No OCR confidence or model score exists. See architecture's story 5
+section for defaults, supported orientation evidence and conservative perspective limits.
+
+Homographies act on pixel-edge coordinates of rendered source and conditioned images. Raster
+warps shift by half a pixel to apply those same transforms to pixel centres. Character boxes map
+all four corners and remain normalized to conditioned dimensions; no character boxes are invented.
+Inverse point/polygon maps remain exact within floating-point tolerance; an enclosing axis-aligned
+box is inherently lossy under perspective. Synthetic tests independently project landmarks and
+assert forward alignment within 3 px and inverse point agreement within 0.001 px.
+
+`PageInput` carries conditioning status/version/reasons and transform; `vision_ready` requires a
+current-version conditioned result. Vision filters each request, including repair evidence. Extraction
+excludes unreadable pages from every reader, reports page-specific reasons and never promotes a
+mixed unreadable segment to an extracted document. Lifecycle activation remains deferred.
+
+
+Conditioning follow-up: TIFF orientation is consumed by Pillow during decode and is not applied a
+second time. Perspective sampling uses a conservative bound on the homography Jacobian over the
+retained sheet; output dimensions are reduced until local magnification respects
+CONDITIONING_MAX_ENLARGEMENT. Rotation canvas padding is excluded from that sampling bound.
+Retained sheet dimensions and final derivative dimensions both constrain the detail floor, so
+photo surrounds and DPI metadata cannot rescue or create resolution. Dominant vertical line
+evidence is compared against horizontal line strength; conflicting significant skew is an explicit
+unresolved-skew refusal. Supplied homographies must be finite, nonsingular, mutually inverse and
+free of an image-crossing projective horizon, and conditioned dimensions must match image metadata
+before direct vision dispatch or repair. Mixed-segment exits retain page refusal reasons alongside
+provider or validation diagnostics, including no-evidence outcomes.

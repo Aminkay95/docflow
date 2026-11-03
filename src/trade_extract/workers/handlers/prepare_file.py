@@ -6,6 +6,7 @@ import shutil
 import tempfile
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
 
 from sqlalchemy.orm import Session
 
@@ -25,6 +26,7 @@ from trade_extract.domain import errors
 from trade_extract.domain.clock import Clock
 from trade_extract.domain.hashing import document_hash, document_idempotency_key
 from trade_extract.domain.ids import new_id
+from trade_extract.services.conditioning import condition_page, diagnostics
 from trade_extract.services.page_model import IMAGE_CONTENT_TYPE, render_container
 from trade_extract.services.segmentation import SegmentSpec, segment_pages
 from trade_extract.services.storage import (
@@ -45,6 +47,11 @@ class _StoredPage:
     text: str
     image_key: str
     thumbnail_key: str
+    conditioning: dict[str, Any]
+    conditioning_version: str
+    status: str
+    unreadable_reason: str | None
+    legibility_score: float
 
 
 def _download_source(storage: ObjectStorage, file_row: File) -> Path:
@@ -80,7 +87,9 @@ def _render_and_store(
         dpi=settings.page_render_dpi,
         thumbnail_max_px=settings.page_thumbnail_max_px,
         quality=settings.page_image_quality,
+        max_pixels=settings.conditioning_max_pixels,
     ):
+        result = condition_page(rendering, settings)
         image_key = page_image_key(
             client_id=file_row.client_id,
             job_id=file_row.job_id,
@@ -95,18 +104,23 @@ def _render_and_store(
         )
         # Images land before the row-writing transaction: a crash after this point
         # leaves at most orphan objects, never a half-written page set.
-        storage.put(image_key, io.BytesIO(rendering.image_bytes), IMAGE_CONTENT_TYPE)
-        storage.put(thumbnail_key, io.BytesIO(rendering.thumbnail_bytes), IMAGE_CONTENT_TYPE)
+        storage.put(image_key, io.BytesIO(result.image_bytes), IMAGE_CONTENT_TYPE)
+        storage.put(thumbnail_key, io.BytesIO(result.thumbnail_bytes), IMAGE_CONTENT_TYPE)
         stored.append(
             _StoredPage(
                 page_index=rendering.page_index,
-                width_px=rendering.width_px,
-                height_px=rendering.height_px,
-                dpi=rendering.dpi,
+                width_px=result.transform.conditioned_size[0],
+                height_px=result.transform.conditioned_size[1],
+                dpi=result.dpi,
                 rotation_deg=rendering.rotation_deg,
                 text=rendering.text,
                 image_key=image_key,
                 thumbnail_key=thumbnail_key,
+                conditioning=diagnostics(result, rendering),
+                conditioning_version=result.version,
+                status=result.status,
+                unreadable_reason=",".join(result.reasons) or None,
+                legibility_score=result.score,
             )
         )
     return stored
@@ -201,6 +215,11 @@ def handle(
             image_key=page.image_key,
             thumbnail_key=page.thumbnail_key,
             now=now,
+            conditioning=page.conditioning,
+            conditioning_version=page.conditioning_version,
+            status=page.status,
+            unreadable_reason=page.unreadable_reason,
+            legibility_score=page.legibility_score,
         )
 
     inserted_segments: list[tuple[SegmentSpec, str]] = []

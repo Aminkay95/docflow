@@ -81,6 +81,15 @@ class Settings(BaseSettings):
     page_render_dpi: int = Field(default=300, ge=36, le=1200)
     page_thumbnail_max_px: int = Field(default=512, ge=16, le=4096)
     page_image_quality: int = Field(default=85, ge=1, le=100)
+    conditioning_max_pixels: int = Field(default=40_000_000, ge=1024, le=100_000_000)
+    conditioning_analysis_max_px: int = Field(default=1600, ge=128, le=4096)
+    conditioning_min_short_edge: int = Field(default=600, ge=16, le=10000)
+    conditioning_min_contrast: float = Field(default=25, ge=0, le=255)
+    conditioning_min_blur: float = Field(default=15, ge=0, le=10000)
+    conditioning_min_ink: float = Field(default=0.001, ge=0, le=1)
+    conditioning_max_ink: float = Field(default=0.8, ge=0, le=1)
+    conditioning_max_skew: float = Field(default=12, ge=0, le=30)
+    conditioning_max_enlargement: float = Field(default=1, ge=1, le=2)
     segmentation_min_confidence: float = Field(default=0.55, ge=0.0, le=1.0)
 
     task_stale_after_seconds: int = Field(default=900, ge=1)
@@ -102,6 +111,8 @@ class Settings(BaseSettings):
 
     @model_validator(mode="after")
     def _resolve_limits_and_check_secrets(self) -> Settings:
+        if self.conditioning_min_ink >= self.conditioning_max_ink:
+            raise ValueError("CONDITIONING_MIN_INK must be below CONDITIONING_MAX_INK")
         if self.provider == "deepseek" and not self.deepseek_api_key.get_secret_value().strip():
             raise ValueError("DEEPSEEK_API_KEY is required when PROVIDER=deepseek")
         if not self.deepseek_base_url.startswith("https://"):

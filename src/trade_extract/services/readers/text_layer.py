@@ -22,7 +22,7 @@ class TextLayerReader:
                 ],
             }
             for page in pages
-            if not page.unreadable and page.characters
+            if not page.is_unreadable and page.characters
         ]
         if not evidence:
             return None

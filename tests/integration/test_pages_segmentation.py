@@ -160,7 +160,11 @@ def test_every_page_has_a_decodable_image_and_thumbnail(api: ApiHarness) -> None
     assert covered == list(range(len(pages)))
 
     for page in pages:
-        assert page.status == "pending"
+        assert page.status in ("conditioned", "unreadable")
+        assert page.conditioning_version == "image-quality-v1"
+        assert page.conditioned_at is not None
+        assert page.conditioning["measurements"]
+        assert page.conditioning["policy"]["min_short_edge"] == 600
         assert page.width_px > 0 and page.height_px > 0
         assert page.dpi == api.settings.page_render_dpi
         assert page.image_key and page.thumbnail_key
@@ -726,3 +730,34 @@ def test_filename_does_not_decide_the_document_type(api: ApiHarness) -> None:
     document = poll(api, result_id)["documents"][0]
     assert document["source"]["filename"] == "invoice.pdf"
     assert document["document_type"] == "bill_of_lading"
+
+
+def test_mixed_quality_persists_outcomes_and_unchanged_coverage(api: ApiHarness) -> None:
+    import io
+
+    from PIL import ImageDraw
+
+    good = Image.new("RGB", (800, 1000), "white")
+    draw = ImageDraw.Draw(good)
+    for y in range(100, 900, 40):
+        draw.line((100, y, 700, y), fill="black", width=3)
+    blank = Image.new("RGB", good.size, "white")
+    stream = io.BytesIO()
+    good.save(stream, format="TIFF", save_all=True, append_images=[blank])
+    api.settings.conditioning_min_blur = 10
+    response = post_files(
+        api, job_ref="BL-MIXED-QUALITY", files=images(stream.getvalue(), "mixed.tiff", "image/tiff")
+    )
+    assert response.status_code == 202
+    drain(api)
+    with api.session_factory() as session:
+        pages = session.execute(select(Page).order_by(Page.page_index)).scalars().all()
+        segments = session.execute(select(Segment).order_by(Segment.page_start)).scalars().all()
+    assert [page.status for page in pages] == ["conditioned", "unreadable"]
+    assert "blank" in pages[1].unreadable_reason
+    assert pages[1].conditioning["reasons"]
+    assert pages[0].conditioning["policy"]["min_blur"] == 10
+    assert [i for segment in segments for i in range(segment.page_start, segment.page_end + 1)] == [
+        0,
+        1,
+    ]

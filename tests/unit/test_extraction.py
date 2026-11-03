@@ -4,6 +4,7 @@ from pathlib import Path
 import pytest
 
 from tests.support import make_pdf
+from trade_extract.domain.conditioning import VERSION, CoordinateTransform
 from trade_extract.domain.fields import Agreement, Field
 from trade_extract.domain.hashing import document_hash
 from trade_extract.domain.inference import PageImage, ProviderResult
@@ -44,6 +45,11 @@ def fixture(tmp_path: Path):
         0,
         PageImage(0, rendered.image_bytes, rendered.width_px, rendered.height_px),
         rendered.characters,
+        conditioning_version=VERSION,
+        conditioning_status="conditioned",
+        transform=CoordinateTransform(
+            (rendered.width_px, rendered.height_px), (rendered.width_px, rendered.height_px)
+        ),
     )
 
     def payload(reader):
@@ -90,7 +96,8 @@ def test_both_readers_extract_valid_invoice(tmp_path):
     assert result.status == "extracted", result.errors
     assert len(result.candidates) == 18
     assert {candidate.field.provenance.model for candidate in result.candidates} == {
-        "mock-text", "mock-vision"
+        "mock-text",
+        "mock-vision",
     }
     assert all(f.agreement == Agreement.UNANIMOUS for f in result.document.fields.values())
     assert not provider.requests[0].pages
@@ -325,3 +332,86 @@ def test_long_decimals_and_metadata_ties_are_order_independent(tmp_path):
     a = FieldCandidate("x", text)
     b = FieldCandidate("x", text.model_copy(update={"raw_text": "different metadata"}))
     assert merge_candidates([a, b]) == merge_candidates([b, a])
+
+
+def test_mixed_unreadable_pages_keep_reasons_and_cannot_promote_document(tmp_path):
+    source, page, payload = fixture(tmp_path)
+    source = source.model_copy(
+        update={
+            "page_end": 1,
+            "document_hash": document_hash(
+                source_file_sha256=source.file_hash,
+                page_start=0,
+                page_end=1,
+                document_type="commercial_invoice",
+            ),
+        }
+    )
+    raw = payload(ReaderKind.VISION)
+    for field in raw["fields"].values():
+        field["provenance"]["document_hash"] = source.document_hash
+    raw["source"] = source.model_dump()
+    provider = MockProvider(
+        {("commercial_invoice", source.document_hash): [ProviderResult(raw, "mock")]}
+    )
+    bad = replace(
+        page,
+        page_index=1,
+        image=replace(page.image, page_index=1),
+        conditioning_status="unreadable",
+        unreadable_reasons=("blurred",),
+    )
+    from trade_extract.services.readers import VisionReader
+
+    result = extract(
+        provider,
+        document_type="commercial_invoice",
+        source=source,
+        pages=(page, bad),
+        readers=(VisionReader(),),
+    )
+    assert result.status == "unreadable" and result.document is None
+    assert result.errors == ("page:1:blurred",)
+    assert [image.page_index for image in provider.requests[0].pages] == [0]
+
+
+@pytest.mark.parametrize("failure", ["no_evidence", "provider", "validation"])
+def test_mixed_refusal_reasons_survive_early_exits(tmp_path, failure):
+    from trade_extract.domain.inference import ProviderError
+    from trade_extract.services.readers import VisionReader
+
+    source, page, _ = fixture(tmp_path)
+    source = source.model_copy(update={"page_end": 1})
+    bad = replace(
+        page,
+        page_index=1,
+        image=replace(page.image, page_index=1),
+        conditioning_status="unreadable",
+        unreadable_reasons=("blurred",),
+    )
+
+    class FailingProvider(MockProvider):
+        def vision_extract(self, request):
+            if failure == "provider":
+                raise ProviderError("provider_unavailable")
+            return ProviderResult("{", "mock")
+
+    provider = FailingProvider()
+    if failure == "no_evidence":
+        page = replace(page, image=None, characters=())
+    result = extract(
+        provider,
+        document_type="commercial_invoice",
+        source=source,
+        pages=(page, bad),
+        readers=(VisionReader(),),
+        max_repairs=0,
+    )
+    assert "page:1:blurred" in result.errors
+    if failure == "no_evidence":
+        assert result.status == "unreadable" and "no_reader_evidence" in result.errors
+    elif failure == "provider":
+        assert "provider_unavailable" in result.errors
+    else:
+        assert "$:invalid_json" in result.errors
+    assert result.document is None

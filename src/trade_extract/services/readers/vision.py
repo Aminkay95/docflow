@@ -16,7 +16,7 @@ class VisionReader:
             page.image is not None and page.image.page_index != page.page_index for page in pages
         ):
             raise ValueError("image_page_index_mismatch")
-        images = tuple(page.image for page in pages if not page.unreadable and page.image)
+        images = tuple(page.image for page in pages if page.vision_ready and page.image)
         if not images:
             return None
         return provider.vision_extract(

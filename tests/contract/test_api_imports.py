@@ -16,6 +16,8 @@ def test_api_import_does_not_load_ocr_or_pdf_libraries() -> None:
     code = (
         "import sys\n"
         "import trade_extract.api.app\n"
+        "import trade_extract.domain.conditioning\n"
+        "import trade_extract.services.conditioning\n"
         f"print(','.join(name for name in {FORBIDDEN!r} if name in sys.modules))\n"
     )
     result = subprocess.run(

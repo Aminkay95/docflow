@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime
+from typing import Any
 
 from sqlalchemy import delete, func, select
 from sqlalchemy.orm import Session
@@ -22,6 +23,11 @@ def insert(
     image_key: str,
     thumbnail_key: str,
     now: datetime,
+    conditioning: dict[str, Any] | None = None,
+    conditioning_version: str | None = None,
+    status: str = "pending",
+    unreadable_reason: str | None = None,
+    legibility_score: float | None = None,
 ) -> Page:
     page = Page(
         id=page_id,
@@ -34,8 +40,12 @@ def insert(
         text_layer_present=bool(text.strip()),
         text_layer_chars=len(text),
         text_layer=text,
-        conditioning={},
-        status="pending",
+        conditioning=conditioning or {},
+        conditioning_version=conditioning_version,
+        status=status,
+        unreadable_reason=unreadable_reason,
+        legibility_score=legibility_score,
+        conditioned_at=now if status in ("conditioned", "unreadable") else None,
         image_key=image_key,
         thumbnail_key=thumbnail_key,
         created_at=now,
