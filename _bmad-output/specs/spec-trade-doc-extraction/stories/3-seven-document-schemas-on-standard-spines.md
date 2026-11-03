@@ -2,7 +2,7 @@
 title: 'Seven document schemas on standard spines'
 type: 'feature'
 created: '2026-11-01'
-status: 'in-progress'
+status: 'done'
 route: 'dispatch'
 review_loop_iteration: 1
 baseline_commit: '1bba29a66875ce2a32226d17b66c0921bedd2ca6'
@@ -57,16 +57,16 @@ context:
 ## Tasks & Acceptance
 
 **Execution:**
-- [ ] `src/trade_extract/domain/provenance.py` — `BBox`, `Provenance`, `CoordinateSpace`, `ReaderKind`; bounds, ordering, confidence, page-number consistency, hash syntax.
-- [ ] `src/trade_extract/domain/fields.py` — `Field`, `ValueType`, `Agreement`, `FieldAlternative`; provenance required; disputed fields require alternatives, others reject them; an alternative's `reader`/`confidence` must agree with its own provenance.
-- [ ] `src/trade_extract/schemas/base.py` — `FieldSpec`, `FieldSet`, `TableSpec`, `TableMeta`, `EnvelopeSource`, `DocumentEnvelope`; spec-driven path, required, provenance and table validation per Design Notes.
-- [ ] `src/trade_extract/schemas/common.py` — reusable party, address, shipment and container specs.
-- [ ] `src/trade_extract/schemas/{invoice,proforma,bill_of_lading,delivery_order,port_pass,custom_entry,verification_memo}.py` — field sets from `docs/06`; custom entry marked provisional.
-- [ ] `src/trade_extract/schemas/registry.py` — `SchemaSpec`, `DOCUMENT_SCHEMAS` for seven types; reject unpinned models and tables disconnected from the field set; `json_schema()` per Design Notes.
-- [ ] `src/trade_extract/api/schemas/results.py` — reuse `Field`, `EnvelopeSource` and `TableMeta` instead of parallel weaker models.
-- [ ] `docs/06-document-schemas.md`, `docs/08-operations-and-decisions.md` — record source-row indexing, string-only v1 extensions, the full proforma rename, and the packing-list entry as proposed rather than active.
-- [ ] `tests/unit/test_provenance.py` — bounds, ordering, page range, hash agreement, non-finite coordinates.
-- [ ] `tests/contract/test_document_schemas.py` — every matrix row, the negative cases in Acceptance, an independent field-set oracle, JSON Schema content, OpenAPI shape, import boundary.
+- [x] `src/trade_extract/domain/provenance.py` — `BBox`, `Provenance`, `CoordinateSpace`, `ReaderKind`; bounds, ordering, confidence, page-number consistency, hash syntax.
+- [x] `src/trade_extract/domain/fields.py` — `Field`, `ValueType`, `Agreement`, `FieldAlternative`; provenance required; disputed fields require alternatives, others reject them; an alternative's `reader`/`confidence` must agree with its own provenance.
+- [x] `src/trade_extract/schemas/base.py` — `FieldSpec`, `FieldSet`, `TableSpec`, `TableMeta`, `EnvelopeSource`, `DocumentEnvelope`; spec-driven path, required, provenance and table validation per Design Notes.
+- [x] `src/trade_extract/schemas/common.py` — reusable party, address, shipment and container specs.
+- [x] `src/trade_extract/schemas/{invoice,proforma,bill_of_lading,delivery_order,port_pass,custom_entry,verification_memo}.py` — field sets from `docs/06`; custom entry marked provisional.
+- [x] `src/trade_extract/schemas/registry.py` — `SchemaSpec`, `DOCUMENT_SCHEMAS` for seven types; reject unpinned models and tables disconnected from the field set; `json_schema()` per Design Notes.
+- [x] `src/trade_extract/api/schemas/results.py` — reuse `Field`, `EnvelopeSource` and `TableMeta` instead of parallel weaker models.
+- [x] `docs/06-document-schemas.md`, `docs/08-operations-and-decisions.md` — record source-row indexing, string-only v1 extensions, the full proforma rename, and the packing-list entry as proposed rather than active.
+- [x] `tests/unit/test_provenance.py` — bounds, ordering, page range, hash agreement, non-finite coordinates.
+- [x] `tests/contract/test_document_schemas.py` — every matrix row, the negative cases in Acceptance, an independent field-set oracle, JSON Schema content, OpenAPI shape, import boundary.
 
 **Acceptance Criteria:**
 - Given a validated document of any type, when serialised, then `schema_version`, `document_type` and every field with provenance are present and no value was altered.
@@ -130,6 +130,15 @@ context:
 | Gap: JSON Schema assertions would accept `{"title": ...}` | high | Same root cause as the generic-`json_schema` finding; grouped with it | bad_spec |
 | Gap: metadata can certify rows never emitted | high | Demonstrated directly by the reviewer; grouped with the table cross-check finding | bad_spec |
 
+| Resumed blind review: provider schema permits omitted fields | medium | Confirmed fields had a default and was absent from root required; fields is now explicitly required, covered by contract test | patch, fixed |
+| Resumed blind review: provider schema loses declared value types | medium | Generic Field refs permitted all value types; scalar and indexed paths now constrain the declared type and extensions constrain string | patch, fixed |
+| Resumed blind review: disconnected explicit table columns | medium | Registration checked only table names; now each explicit column must match a row path or its nested prefix | patch, fixed |
+| Resumed blind review: leading-zero cell aliases | medium | Integer row accounting merged [0] and [00] while field keys differed; concrete validation and provider indexed patterns now reject aliases | patch, fixed |
+| Resumed edge review: omitted fields object | medium | Same verified missing-root-required defect as blind review, fixed and tested | patch, grouped |
+| Resumed edge review: wrong declared type | medium | Same verified generic-Field schema defect as blind review, fixed and tested | patch, grouped |
+| Resumed edge review: disconnected table columns | medium | Same verified registry column defect as blind review, fixed and tested | patch, grouped |
+| Resumed verification review: nested array continuity per parent untested | medium | Added accepted and rejected two-parent cases for both container_numbers and seal_numbers; preserves independent zero-based indices | patch, fixed |
+
 ## Design Notes
 
 The field set is data: one generic envelope validates seven types by consulting a declarative `FieldSet`. `Field` is emitted; `FieldSpec` decides what is legal.
@@ -148,3 +157,11 @@ The field set is data: one generic envelope validates seven types by consulting 
 - `uv run pytest tests/unit/test_provenance.py tests/contract/test_document_schemas.py -q` — expected: all pass.
 - `uv run pytest -q` — expected: all pass, including the integration suite.
 - `uv run ruff check src tests` and `uv run mypy src` — expected: clean.
+
+## Resumed Build Verification
+
+- Resumed existing in-review implementation without discarding staged work.
+- Added provider-schema required/type constraints, canonical array indices, explicit table-column registration checks, and five regression cases.
+- Focused provenance/schema suite: 103 passed.
+- Final full suite: 310 passed (one existing FastAPI/Starlette dependency deprecation warning).
+- Ruff and mypy pass. No review findings deferred.

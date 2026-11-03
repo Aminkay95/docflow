@@ -6,6 +6,8 @@ from typing import Any, Literal
 from pydantic import BaseModel, ConfigDict, Field, field_serializer
 
 from trade_extract.api.schemas.common import iso_z
+from trade_extract.domain.fields import Field as DocumentField
+from trade_extract.schemas.base import EnvelopeSource, TableMeta
 
 
 class Progress(BaseModel):
@@ -31,16 +33,6 @@ class DocumentReview(BaseModel):
     extraction_open: bool = False
     conflict_open: bool = False
     url: str | None = None
-
-
-class Source(BaseModel):
-    filename: str
-    content_type: str
-    file_hash: str
-    document_hash: str
-    page_start: int
-    page_end: int
-    page_count: int | None = None
 
 
 class Conflict(BaseModel):
@@ -79,10 +71,10 @@ class Document(BaseModel):
     ) = None
     document_type_confidence: float | None = None
     schema_version: str | None = None
-    source: Source | None = None
-    fields: dict[str, dict[str, Any]] | None = None
-    tables: dict[str, Any] | None = None
-    extension: dict[str, dict[str, Any]] | None = None
+    source: EnvelopeSource | None = None
+    fields: dict[str, DocumentField] | None = None
+    tables: dict[str, TableMeta] | None = None
+    extension: dict[str, DocumentField] | None = None
     checks: list[dict[str, Any]] | None = None
     conflicts: list[Conflict] | None = None
     decision: Decision | None = None

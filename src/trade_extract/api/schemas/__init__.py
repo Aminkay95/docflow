@@ -11,14 +11,15 @@ from trade_extract.api.schemas.results import (
     Progress,
     Result,
     ReviewCounts,
-    Source,
 )
+from trade_extract.schemas.base import EnvelopeSource, TableMeta
 
 __all__ = [
     "Conflict",
     "Decision",
     "Document",
     "DocumentReview",
+    "EnvelopeSource",
     "Error",
     "ErrorEnvelope",
     "ExtractAccepted",
@@ -26,5 +27,5 @@ __all__ = [
     "Progress",
     "Result",
     "ReviewCounts",
-    "Source",
+    "TableMeta",
 ]

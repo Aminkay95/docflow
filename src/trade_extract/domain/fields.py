@@ -71,7 +71,9 @@ class Field(BaseModel):
     def _alternatives_match_agreement(self) -> Field:
         if self.agreement is Agreement.DISPUTED:
             if not self.alternatives:
-                raise ValueError("a disputed field must carry at least one alternative reader value")
+                raise ValueError(
+                    "a disputed field must carry at least one alternative reader value"
+                )
         elif self.alternatives:
             raise ValueError(
                 "alternatives are present only when agreement is 'disputed'; "
