@@ -16,6 +16,7 @@ class ExtractAccepted(BaseModel):
     submitted_documents: int
     duplicate_documents: int
     status_url: str
+    job_url: str
     created_at: datetime
 
     @field_serializer("created_at")

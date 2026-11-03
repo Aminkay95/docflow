@@ -115,6 +115,16 @@ def save_conflicts(
     session: Session, *, job_id: str, client_id: str, drafts: list[ConflictDraft], now: datetime
 ) -> None:
     for draft in drafts:
+        prior = session.scalar(
+            select(ConflictRecord).where(
+                ConflictRecord.job_id == job_id,
+                ConflictRecord.client_id == client_id,
+                ConflictRecord.fingerprint == draft.fingerprint,
+                ConflictRecord.status.in_(("resolved", "waived")),
+            )
+        )
+        if prior is not None:
+            continue
         conflict = session.scalar(
             select(ConflictRecord).where(
                 ConflictRecord.job_id == job_id,
@@ -157,6 +167,7 @@ def save_conflicts(
             )
         conflict.last_seen_at = now
         conflict.updated_at = now
+        conflict.fingerprint = draft.fingerprint
         existing = set(
             session.execute(
                 select(ConflictSource.document_id, ConflictSource.field_path).where(
@@ -180,11 +191,16 @@ def save_conflicts(
     session.flush()
 
 
-def conflicts_for(session: Session, *, job_id: str, client_id: str) -> list[dict[str, Any]]:
+def conflicts_for(
+    session: Session, *, job_id: str, client_id: str, conflict_ids: list[str] | None = None
+) -> list[dict[str, Any]]:
+    query = select(ConflictRecord)
+    if conflict_ids is not None:
+        query = query.where(ConflictRecord.id.in_(conflict_ids))
     records = session.scalars(
-        select(ConflictRecord)
-        .where(ConflictRecord.job_id == job_id, ConflictRecord.client_id == client_id)
-        .order_by(ConflictRecord.canonical_key, ConflictRecord.id)
+        query.where(
+            ConflictRecord.job_id == job_id, ConflictRecord.client_id == client_id
+        ).order_by(ConflictRecord.canonical_key, ConflictRecord.id)
     ).all()
     ids = [c.id for c in records]
     sources: dict[str, list[dict[str, Any]]] = {i: [] for i in ids}
@@ -201,6 +217,7 @@ def conflicts_for(session: Session, *, job_id: str, client_id: str) -> list[dict
             "canonical_key": c.canonical_key,
             "field_label": c.field_label,
             "status": c.status,
+            "fingerprint": c.fingerprint,
             "sources": sources[c.id],
         }
         for c in records

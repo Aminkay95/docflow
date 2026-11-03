@@ -1036,3 +1036,13 @@ PostgreSQL lifecycle tests exercise persistence and outbox parity. Synthetic res
 not establish model accuracy or justify threshold changes. See [evaluation.md](evaluation.md)
 for CLI, corpus intake and scratch-database adapter instructions. Real evaluation and
 calibration remain pending a labelled real corpus.
+
+## Stories 11–15 runtime completion
+
+Job accumulation reads, authenticated two-track review, retained correction overlays, trust
+observations and extraction of the six remaining registered types are implemented. The automatic
+gate evidence remains immutable; human resolution is represented by retained labels, resolved
+status and independent queue counts. New trust identities are full-review, correction demotion
+is scoped to the exact identity, and v1 has no promotion path. Source expiry cannot delete the
+retained evidence used by later submissions. See docs/03–06 for the runtime boundaries and the
+explicit decision to retain existing local schema paths.

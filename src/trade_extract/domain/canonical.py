@@ -59,7 +59,7 @@ def canonical_key(document_type: str, path: str) -> str | None:
 
 
 def normalize(key: str, value: str) -> str | Decimal:
-    if key.endswith(("_kg", ".package_count")):
+    if key.endswith(("_kg", ".package_count", "_amount")):
         return decimal_value(value)
     if key.endswith("_date"):
         return date.fromisoformat(value).isoformat()

@@ -22,6 +22,9 @@ from trade_extract.db.models.task import JobTask
 from trade_extract.db.models.webhook import WebhookDelivery
 
 __all__ = [
+    "ReviewResolution",
+    "TrustObservation",
+    "TrustRecord",
     "ApiKey",
     "Client",
     "Document",
@@ -41,3 +44,6 @@ __all__ = [
     "Submission",
     "WebhookDelivery",
 ]
+
+from trade_extract.db.models.review import ReviewResolution
+from trade_extract.db.models.trust import TrustObservation, TrustRecord

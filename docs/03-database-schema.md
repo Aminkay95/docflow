@@ -1051,3 +1051,18 @@ for Postgres 16 with the indexes above. Partition only when measured:
 - Time is injected through `domain.clock.Clock`; retention and webhook tests never sleep for hours.
 - Fixtures include a seeded client, API key, reviewer, active policy and a small PDF.
 
+
+## Stories 11–15 persistence
+
+Migration `0005_review_trust` adds review assignments, immutable `review_resolutions`,
+`trust_records` and one `trust_observations` row per document. The SQL designs earlier in this
+file remain a broader target; the runtime resolution prior/corrected values are JSONB Field
+objects (or conflict source/status evidence), not strings. Outcomes include `client_notified`
+and `failure_confirmed` in addition to correction, confirmation and conflict resolutions.
+
+Trust identity is unique on client/supplier/type/fingerprint. Runtime trust state is
+`unseen|observed|trusted`, with `review_depth` and a correction counter. New records are unseen
+and full review; no code promotes or reduces depth. Atomic PostgreSQL upsert and row locks make
+shared identity creation safe across concurrent jobs. Unknown suppliers/fingerprints are isolated
+per document rather than pooled. Human correction resets only the observed record to unseen/full
+and increments its counter. Confirmation and conflict business choices do not demote trust.

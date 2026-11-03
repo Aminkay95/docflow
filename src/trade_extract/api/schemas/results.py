@@ -83,6 +83,7 @@ class Document(BaseModel):
     fields: dict[str, DocumentField] | None = None
     tables: dict[str, TableMeta] | None = None
     extension: dict[str, DocumentField] | None = None
+    corrections: dict[str, DocumentField] = Field(default_factory=dict)
     checks: list[dict[str, Any]] | None = None
     conflicts: list[Conflict] | None = None
     decision: Decision | None = None

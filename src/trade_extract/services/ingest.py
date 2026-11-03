@@ -4,6 +4,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import Any
 
+from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -42,6 +43,7 @@ class AcceptedSubmission:
     submitted_documents: int
     duplicate_documents: int
     status_url: str
+    job_url: str
     created_at: datetime
 
 
@@ -52,7 +54,7 @@ def accepted_from_submission(
 
     The ``202`` body always reports ``status: queued``, including on replay after the
     submission completed and for the all-duplicates case; polling reveals completion.
-    It intentionally does not advertise a job URL until a job-read route exists.
+    The job URL exposes accumulated state while the result remains submission-scoped.
     """
 
     return AcceptedSubmission(
@@ -63,6 +65,7 @@ def accepted_from_submission(
         submitted_documents=submission.document_count,
         duplicate_documents=submission.duplicate_count,
         status_url=f"{settings.base_url}/v1/results/{submission.result_id}",
+        job_url=f"{settings.base_url}/v1/jobs/{job.id}",
         created_at=submission.created_at,
     )
 
@@ -321,7 +324,15 @@ def accept(
             if existing is None:
                 new_documents.append(document)
             elif existing.status in RETRYABLE_FILE_STATUSES:
-                resurrect.append((existing, document))
+                retained = session.scalars(
+                    select(Document).where(Document.file_id == existing.id)
+                ).all()
+                if any(d.extraction is not None or d.resolved_at is not None for d in retained):
+                    # Media expiry or a later file failure cannot invalidate retained
+                    # extraction evidence or human labels for identical content.
+                    duplicate_count += 1
+                else:
+                    resurrect.append((existing, document))
             else:
                 duplicate_count += 1
 
@@ -521,12 +532,16 @@ def build_result(
                 1
                 for document, _, _ in document_rows
                 if document.status in ("extracted", "review_required", "resolved")
+                and document.decision not in ("failed", "unreadable")
             )
             + duplicates
         )
         documents_failed = (
             sum(
-                1 for document, _, _ in document_rows if document.status in ("failed", "unreadable")
+                1
+                for document, _, _ in document_rows
+                if document.status in ("failed", "unreadable")
+                or (document.status == "resolved" and document.decision in ("failed", "unreadable"))
             )
             + failed_without_documents
         )
@@ -597,6 +612,20 @@ def build_result(
         for key in ("schema_version", "fields", "tables", "extension"):
             if key in snapshot:
                 output[key] = snapshot[key]
+        from trade_extract.db.models.evidence import ReviewItem
+        from trade_extract.db.models.review import ReviewResolution
+
+        labels = session.scalars(
+            select(ReviewResolution)
+            .join(ReviewItem, ReviewResolution.review_item_id == ReviewItem.id)
+            .where(ReviewItem.document_id == record.id)
+            .order_by(ReviewResolution.created_at)
+        ).all()
+        output["corrections"] = {
+            label.field_path: label.corrected_value
+            for label in labels
+            if label.corrected_value is not None
+        }
         output["checks"] = document_checks.get(record.id, [])
         output["decision"] = document_decisions.get(record.id)
         output["conflicts"] = [
@@ -604,7 +633,15 @@ def build_result(
         ]
         open_document_conflicts = [c for c in output["conflicts"] if c["status"] == "open"]
         output["review"] = {
-            "extraction_open": record.decision in ("review", "failed", "unreadable"),
+            "extraction_open": session.scalar(
+                select(ReviewItem.id)
+                .where(
+                    ReviewItem.document_id == record.id,
+                    ReviewItem.status.in_(("open", "in_progress")),
+                )
+                .limit(1)
+            )
+            is not None,
             "conflict_open": bool(open_document_conflicts),
         }
         if open_document_conflicts and output["decision"]:

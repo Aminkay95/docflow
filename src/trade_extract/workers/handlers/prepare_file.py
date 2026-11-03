@@ -272,7 +272,9 @@ def handle(
             now=now,
         )
         session.flush()
-        if spec.document_type == "commercial_invoice":
+        from trade_extract.schemas.registry import DOCUMENT_SCHEMAS
+
+        if spec.document_type in DOCUMENT_SCHEMAS:
             tasks_repo.enqueue(
                 session,
                 job_id=file_row.job_id,
@@ -299,10 +301,13 @@ def handle(
                 policy_version=policy.version,
                 config=policy.config,
             )
-            decision["diagnostics"] = ["document_type_not_activated"]
+            decision["diagnostics"] = ["unsupported_document_type"]
             document.status = "review_required"
             document.decision = "review"
             document.decision_reason = "; ".join(decision["reasons"])
+            from trade_extract.services.trust import observe
+
+            observe(session, document, now)
             save_document(session, document, [], decision)
 
     files_repo.mark_processed(session, file_row, now=now)

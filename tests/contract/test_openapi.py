@@ -14,6 +14,10 @@ IMPLEMENTED = {
     "/v1/results/{result_id}": {"get"},
     "/v1/health": {"get"},
     "/v1/health/ready": {"get"},
+    "/v1/jobs/{job_id}": {"get"},
+    "/v1/jobs/{job_id}/documents": {"get"},
+    "/v1/jobs/{job_id}/conflicts": {"get"},
+    "/v1/documents/{document_id}": {"get"},
 }
 
 pytestmark = pytest.mark.contract

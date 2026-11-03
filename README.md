@@ -17,6 +17,16 @@ uv run uvicorn trade_extract.api.app:create_app --factory --reload
 The API is then available at `http://localhost:8000`, with liveness at
 `GET /v1/health` and readiness at `GET /v1/health/ready`.
 
+Provision an internal reviewer with `uv run python scripts/provision_reviewer.py USERNAME`
+(the password is prompted), then open `/review/login`. Customer API keys cannot resolve
+review items. The dashboard links to separate extraction and conflict queues. Corrections
+are labelled overlays; original extraction values remain available in results.
+
+Repeated submissions with the same client and `job_ref` share one job. Follow the returned
+`job_url` for accumulated documents and conflicts; each `status_url` remains scoped to its
+submission. All seven registered types extract; the six noncommercial types always require
+full review. Existing schema versions and local field paths are preserved.
+
 ## Tests
 
 ```bash

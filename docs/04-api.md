@@ -764,3 +764,23 @@ routes are intentionally excluded from the public document.
 
 Generate client SDKs from `openapi.yaml`, not from a running server. The committed file is the
 source of truth for external integrators.
+
+## Stories 11–15 implementation
+
+Accumulated reads are available at `/v1/jobs/{job_id}`, its document/conflict collections,
+and `/v1/documents/{document_id}`, using `results:read`. Collections use a bounded response
+size (1–100) and opaque row-ID cursors. A result still lists only its own submission's
+segments; job-wide conflicts include retained earlier evidence. Acceptance includes `job_url`.
+
+Human corrections appear in a separate `corrections` map, with the same typed Field and
+provenance contract. Original `fields`, `extension`, checks and extraction snapshots are
+retained. Decisions record the original automatic gate; current `status` and `review` counts
+show human resolution. Review resolution records are retained in PostgreSQL and visible in
+session-authenticated workspaces. Identical purged files with retained extraction or human
+resolution are duplicates; they never replace those retained records. A new document under
+the same reference is compared against retained extractions without needing old source media.
+
+The job overview contains document/conflict summaries; source evidence is obtained from the
+conflict collection or individual document read. Collection limits and cursors are applied in
+PostgreSQL before evidence is loaded. A conflict collection's optional `document_type` filter
+matches any source of that type. Use the paginated collections for large accumulated jobs.

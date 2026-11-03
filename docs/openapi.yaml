@@ -852,6 +852,11 @@ components:
           type: object
           additionalProperties:
             $ref: "#/components/schemas/Field"
+        corrections:
+          description: Human correction overlay; original fields and extraction remain immutable.
+          type: object
+          additionalProperties:
+            $ref: "#/components/schemas/Field"
         checks:
           anyOf:
             - type: array

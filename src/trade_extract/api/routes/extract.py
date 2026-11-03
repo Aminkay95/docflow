@@ -81,5 +81,6 @@ async def extract_documents(
         submitted_documents=accepted.submitted_documents,
         duplicate_documents=accepted.duplicate_documents,
         status_url=accepted.status_url,
+        job_url=accepted.job_url,
         created_at=accepted.created_at,
     )

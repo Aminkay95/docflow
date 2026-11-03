@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="en"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width">
+<title>{{ title }} · Trade Extract</title>
+<link rel="stylesheet" href="/review/static/review.css"><script src="/review/static/review.js" defer></script>
+</head><body><header><p class="brand">Trade Extract</p><h1>{{ title }}</h1>
+<nav aria-label="Review navigation"><a href="/review">Dashboard</a><a href="/review/queues/extraction">Extraction review</a><a href="/review/queues/conflicts">Conflict review</a></nav></header><main>
+{% if login %}
+<form method="post" class="login"><input name="csrf" type="hidden" value="{{ login_csrf }}">
+<label>Username <input name="username" autocomplete="username" required></label>
+<label>Password <input type="password" name="password" autocomplete="current-password" required></label><button>Log in</button></form>
+{% else %}
+<div id="feedback" role="status" aria-live="polite"></div>
+{% if counts is defined %}<div class="queue-cards">
+<section><h2>Extraction review <span class="count">{{ counts.get('extraction', 0) }}</span></h2><p>Check what the reader extracted from the source.</p><a href="/review/queues/extraction">Open extraction queue</a></section>
+<section><h2>Conflict review <span class="count">{{ counts.get('conflict', 0) }}</span></h2><p>Record the client's decision about disagreeing documents.</p><a href="/review/queues/conflicts">Open conflict queue</a></section></div>
+{% if track %}<section><h2>{{ 'Extraction' if track == 'extraction' else 'Conflict' }} queue</h2>
+{% for i in items %}<article><a href="{{ '/review/documents/' ~ i.document_id if i.track == 'extraction' else '/review/conflicts/' ~ i.conflict_id }}">{{ i.summary }}</a><p>{{ i.status }} · {{ i.created_at }}</p>
+{% if not read_only %}<button data-action="/review/queues/{{ i.id }}/claim">Claim</button><button data-action="/review/queues/{{ i.id }}/release">Release</button>{% endif %}</article>
+{% else %}<p>No open {{ 'extraction reviews' if track == 'extraction' else 'conflicts' }}.</p>{% endfor %}<p>Showing {{ items | length }} items (up to 100).</p>{% if next_cursor %}<a href="/review/queues/{{ track }}?cursor={{ next_cursor }}">Next page</a>{% endif %}</section>{% endif %}{% endif %}
+{% if document %}
+<p>{{ document.document_type }} · {{ document.job_ref or document.job_id }} · {{ document.status }}</p>
+<p>Original values and evidence remain unchanged. Human corrections are recorded separately.</p>
+<div class="workspace"><section><h2>Source pages</h2>
+{% for page in range(document.source.page_start, document.source.page_end + 1) %}<figure id="page-{{ page }}"><div class="page-image"><img loading="lazy" alt="Conditioned source page {{ page + 1 }}" src="/review/media/documents/{{ document.document_id }}/pages/{{ page }}"><div class="bbox" hidden></div></div><figcaption>Page {{ page + 1 }}</figcaption></figure>{% endfor %}</section>
+<section><h2>Extracted fields</h2>{% set reviewed = labels | map(attribute='field_path') | list %}
+{% for path, field in display_fields.items() %}<article tabindex="0" data-page="{{ field.provenance.page_index }}" data-box='{{ boxes.get(path) | tojson }}'>
+<h3>{{ path }}</h3><p class="value">{{ field.value }}</p><p>Page {{ field.provenance.page_index + 1 }} · {{ field.provenance.reader }}</p>
+{% if path in document.corrections %}<p class="correction">Human correction: {{ document.corrections[path].value }}</p>{% endif %}
+{% if path in reviewed %}<p>Resolution recorded.</p>{% elif item and not read_only %}
+<form data-resolve="/review/queues/{{ item.id }}/resolve" data-field='{{ field | tojson }}'><input type="hidden" name="field_path" value="{{ path }}">
+<label>Outcome <select name="outcome"><option value="confirmed">Confirm</option><option value="corrected">Correct</option></select></label>
+<label>Corrected value <input name="value" value="{{ field.value }}"></label><label>Reason <textarea name="reason" required minlength="4" maxlength="4000"></textarea></label><button>Record field resolution</button></form>{% endif %}</article>
+{% else %}<p>No fields were emitted. Review the retained failure or unreadable outcome.</p>{% endfor %}
+<h2>Checks and diagnostics</h2><pre>{{ document.checks | tojson(indent=2) }}</pre><pre>{{ document.decision | tojson(indent=2) }}</pre>
+{% if item and not read_only and (document.status == 'unreadable' or not display_fields) %}<form data-resolve="/review/queues/{{ item.id }}/resolve"><input name="outcome" type="hidden" value="{{ 'unreadable_confirmed' if document.status == 'unreadable' else 'failure_confirmed' }}"><label>Reason <textarea name="reason" required minlength="4" maxlength="4000"></textarea></label><button>Confirm {{ 'unreadable' if document.status == 'unreadable' else 'failed extraction' }} outcome</button></form>{% endif %}
+<h2>Resolution history</h2>{% for label in labels %}<p>{{ label.field_path }} · {{ label.outcome }} · {{ label.reason }} &middot; {{ label.reviewer_name }} ({{ label.reviewer_id }}) &middot; {{ label.created_at }}</p>{% else %}<p>No resolutions recorded.</p>{% endfor %}</section></div>{% endif %}
+{% if conflict %}<section><h2>{{ conflict.field_label }}</h2><p>{{ conflict.status }} · Source values remain unchanged.</p><div class="sources">
+{% for source in conflict.sources %}<article><a href="/review/documents/{{ source.document_id }}">{{ source.document_type }}</a><p>Stated: {{ source.stated_value }}</p><p>{{ source.comparison_reason or '' }}</p><pre>{{ source.provenance | tojson }}</pre></article>{% endfor %}</div>
+{% if item and not read_only %}<form data-resolve="/review/queues/{{ item.id }}/resolve"><input type="hidden" name="expected_fingerprint" value="{{ conflict.fingerprint }}"><label>Outcome <select name="outcome"><option value="accepted">Accept named source</option><option value="waived">Waive discrepancy</option><option value="client_notified">Client notified — keep open</option></select></label><label>Source <select name="chosen_document_id">{% for source in conflict.sources %}<option value="{{ source.document_id }}">{{ source.document_id }}</option>{% endfor %}</select></label><label>Reason <textarea name="reason" required minlength="4" maxlength="4000"></textarea></label><button>Record client decision</button></form>{% endif %}</section>{% endif %}
+{% if conflict %}<section><h2>Resolution history</h2>{% for label in labels %}<p>{{ label.outcome }} &middot; {{ label.reason }} &middot; {{ label.reviewer_name }} ({{ label.reviewer_id }}) &middot; {{ label.created_at }}{% if label.chosen_document_id %} &middot; Selected: {{ label.chosen_document_id }}{% endif %}</p>{% else %}<p>No resolutions recorded.</p>{% endfor %}</section>{% endif %}<footer><button data-post="/review/logout">Log out</button><button data-post="/review/logout-all">Log out all sessions</button></footer><input id="csrf" type="hidden" value="{{ csrf }}">{% endif %}
+</main></body></html>

@@ -428,3 +428,41 @@ A small, explicit system rather than a component framework:
   never contains document text beyond the corrected field value that the resolution record already
   owns.
 - The browser never receives a storage key or a presigned URL. Media is proxied by the API.
+
+## Implemented review scope (stories 12–13)
+
+The runtime now provides login/logout/logout-all, a dashboard with separate extraction and
+conflict counts, distinct queue pages, claim/release, document and conflict workspaces,
+retained field labels and authenticated page/thumbnail media. It uses server-rendered Jinja
+with small local JavaScript for mutations; no external JavaScript CDN is needed. The broader
+admin/timeline/candidate-crop screens above remain design targets, not implemented routes.
+
+Provision reviewers through `scripts/provision_reviewer.py`; it prompts for a password and
+stores a salted scrypt hash. Sessions use the existing SECRET_KEY with a distinct signing salt,
+an eight-hour absolute lifetime and thirty-minute idle timeout, epoch revocation, HttpOnly /
+SameSite=Lax cookies, production Secure cookies and CSRF on mutations. Auditors can read and
+log out but cannot claim or resolve. Login throttling is per application process: five attempts
+per minute per IP and ten per hour per username. A multi-process deployment must enforce an
+aggregate limit at its reverse proxy. Reviewers are internal operators spanning clients;
+customer API credentials grant no review access. Service writes still verify the target client.
+
+Each field is confirmed or corrected once per item; the item stays open until all emitted
+primary and extension fields have labels. A correction retains the prior Field, corrected
+Field, unchanged provenance, reviewer, reason and timestamp. The immutable extraction is
+never edited. Empty failed/unsupported extractions may be acknowledged as `failure_confirmed`;
+unreadable outcomes as `unreadable_confirmed`. Neither supplies invented values. These are
+human acknowledgements, not successful extraction. Original gate decisions remain retained.
+
+Conflict acceptance must name an actual source; waiver and client notification preserve every
+stated source. Notification leaves the conflict open. Reconciliation does not reopen identical
+resolved/waived evidence; newly added evidence changes its fingerprint and can open new review.
+The last closed review makes the job terminal only when there are no pending submissions or
+open items on either track. Field focus highlights its box on the conditioned image using the
+stored source-to-conditioned transform. Expired media returns 410 while extraction remains.
+
+Queue pages now offer a cursor link after each 100 items. Conflict decisions carry the
+fingerprint shown in the workspace; a later submission changing that evidence returns 409
+until the reviewer reloads it. Both workspaces display retained resolutions and reviewer
+identity. Failed/unreadable acknowledgement closes review without increasing successful
+extraction progress. Login buckets expire globally on subsequent attempts; in-process
+updates are serialized to avoid concurrent throttling races.

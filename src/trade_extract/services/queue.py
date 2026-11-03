@@ -226,6 +226,9 @@ def terminalise_dead_task(
             document.decision = "failed"
             document.decision_reason = code
             document.updated_at = now
+            from trade_extract.services.trust import observe
+
+            observe(session, document, now)
             policy = session.get(Policy, job.policy_id)
             if policy:
                 decision = decide_document(

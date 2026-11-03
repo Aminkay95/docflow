@@ -120,6 +120,7 @@ class ReviewItem(Base):
     conflict_id: Mapped[str | None] = mapped_column(ForeignKey("conflicts.id", ondelete="CASCADE"))
     track: Mapped[str] = mapped_column(Text)
     status: Mapped[str] = mapped_column(Text, server_default=text("'open'"))
+    assigned_to: Mapped[str | None] = mapped_column(ForeignKey("reviewers.id"))
     reason_code: Mapped[str] = mapped_column(Text)
     summary: Mapped[str] = mapped_column(Text)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())

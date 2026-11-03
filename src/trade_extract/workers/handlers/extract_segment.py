@@ -171,7 +171,7 @@ def handle(session: Session, task: JobTask, *, settings: Settings, clock: Clock)
     gate, _ = effective_policy(config)
     checks = (
         run_invoice_checks(outcome.document, tolerance=gate.arithmetic_tolerance)
-        if outcome.document
+        if outcome.document and identity["document_type"] == "commercial_invoice"
         else []
     )
     decision = decide_document(
@@ -218,6 +218,13 @@ def handle(session: Session, task: JobTask, *, settings: Settings, clock: Clock)
     segment = session.get(Segment, identity["segment_id"])
     if segment:
         segment.status = "extracted" if outcome.document else "failed"
+    snapshot_fields = (document.extraction or {}).get("fields", {})
+    supplier = snapshot_fields.get("seller.name", {}).get("value")
+    if supplier:
+        document.supplier_name = supplier
+        document.supplier_key = " ".join(supplier.split()).casefold()
+    from trade_extract.services.trust import observe
+    observe(session, document, clock.now())
     evidence.save_document(session, document, checks, decision)
     from trade_extract.db.repositories import tasks as tasks_repo
 

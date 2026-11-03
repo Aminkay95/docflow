@@ -941,3 +941,23 @@ same schema version; a change in meaning or a removed field requires a new `sche
 }
 ```
 
+
+## Stories 14–15 activation and schema decision
+
+All seven registry types now enqueue extraction, with schema validation, bounded repair,
+provenance mapping and unreadable refusal. Only commercial invoices run invoice checks or can
+use the invoice pass gate. Proforma, B/L, custom entry, delivery order, port pass and verification
+memo always enter full review. Packing list/unknown segments remain explicitly unsupported and
+review-only; no eighth schema was introduced.
+
+The user explicitly approved preserving story 3's existing schemas: local types retain their
+typed primary paths plus string-only namespaced extensions. Story 15's extension-only wording
+is overridden for this activation. No schema versions or requiredness changed. Verification
+memo findings and arbitrary extension notes retain their free-form text and source row indices.
+
+Custom-entry reconciliation compares printed CIF/FOB figures with printed invoice payable amounts
+only when its explicit CIF/FOB incoterm establishes matching semantics. Printed freight/insurance
+can compare to `extension.any.freight_amount` / `extension.any.insurance_amount` on the invoice.
+These are existing string extension paths, parsed only for comparison. Missing/mismatched currency
+produces an incomparable signal. General charge totals are never assumed to mean freight; no
+customs amounts, duties, taxes, currency conversions or CIF sums are calculated or emitted.

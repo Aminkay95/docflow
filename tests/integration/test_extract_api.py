@@ -61,7 +61,7 @@ def test_happy_path_accepts_a_group(api: ApiHarness) -> None:
     assert body["result_id"].startswith("res_")
     assert body["job_id"].startswith("job_")
     assert body["status_url"].endswith(body["result_id"])
-    assert "job_url" not in body
+    assert body["job_url"].endswith(f"/v1/jobs/{body['job_id']}")
     assert response.headers["Location"] == f"/v1/results/{body['result_id']}"
     assert response.headers["Retry-After"] == "2"
 

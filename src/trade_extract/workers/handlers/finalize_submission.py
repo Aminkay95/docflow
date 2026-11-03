@@ -91,6 +91,7 @@ def handle(
                 "document_id": d.id,
                 "document_type": d.document_type,
                 "fields": d.extraction.get("fields", {}),
+                "extension": d.extraction.get("extension", {}),
             }
             for d in all_documents
             if d.extraction

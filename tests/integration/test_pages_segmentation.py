@@ -88,8 +88,8 @@ def test_mixed_pdf_yields_three_documents_covering_every_page(api: ApiHarness) -
     body = poll(api, result_id)
     assert body["status"] == "failed"
     assert body["progress"]["documents_total"] == 3
-    assert body["progress"]["documents_completed"] == 2
-    assert body["progress"]["documents_failed"] == 1
+    assert body["progress"]["documents_completed"] == 1
+    assert body["progress"]["documents_failed"] == 2
     assert body["progress"]["pages_total"] == 3
     assert body["progress"]["pages_read"] == 3
 
@@ -112,15 +112,22 @@ def test_mixed_pdf_yields_three_documents_covering_every_page(api: ApiHarness) -
         file_row = session.execute(select(File)).scalars().one()
         file_sha = file_row.sha256
         for document in documents:
-            assert document["status"] == (
-                "failed" if document["document_type"] == "commercial_invoice" else "review_required"
+            assert (
+                document["status"]
+                == (
+                    {
+                        "packing_list": "review_required",
+                        "bill_of_lading": "unreadable",
+                        "commercial_invoice": "failed",
+                    }[document["document_type"]]
+                )
             )
             assert 0.0 <= document["document_type_confidence"] <= 1.0
             assert document["fields"] is None
             assert document["tables"] == {}
             assert document["extension"] == {}
             assert document["checks"] == []
-            assert document["decision"]["value"] in ("failed", "review")
+            assert document["decision"]["value"] in ("failed", "review", "unreadable")
             assert document["source"]["filename"].startswith("mixed-")
             assert document["source"]["file_hash"] == f"sha256:{file_sha}"
             expected = hashlib.sha256(
