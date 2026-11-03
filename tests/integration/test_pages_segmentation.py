@@ -86,9 +86,10 @@ def test_mixed_pdf_yields_three_documents_covering_every_page(api: ApiHarness) -
     drain(api)
 
     body = poll(api, result_id)
-    assert body["status"] == "completed"
+    assert body["status"] == "failed"
     assert body["progress"]["documents_total"] == 3
-    assert body["progress"]["documents_completed"] == 3
+    assert body["progress"]["documents_completed"] == 2
+    assert body["progress"]["documents_failed"] == 1
     assert body["progress"]["pages_total"] == 3
     assert body["progress"]["pages_read"] == 3
 
@@ -111,13 +112,15 @@ def test_mixed_pdf_yields_three_documents_covering_every_page(api: ApiHarness) -
         file_row = session.execute(select(File)).scalars().one()
         file_sha = file_row.sha256
         for document in documents:
-            assert document["status"] == "queued"
+            assert document["status"] == (
+                "failed" if document["document_type"] == "commercial_invoice" else "review_required"
+            )
             assert 0.0 <= document["document_type_confidence"] <= 1.0
             assert document["fields"] is None
             assert document["tables"] == {}
             assert document["extension"] == {}
-            assert document["checks"] is None
-            assert document["decision"] is None
+            assert document["checks"] == []
+            assert document["decision"]["value"] in ("failed", "review")
             assert document["source"]["filename"].startswith("mixed-")
             assert document["source"]["file_hash"] == f"sha256:{file_sha}"
             expected = hashlib.sha256(
@@ -412,15 +415,15 @@ def test_progress_counts_a_sibling_that_is_still_waiting(api: ApiHarness) -> Non
     body = poll(api, result_id)
     assert body["status"] == "processing"
     assert body["progress"]["documents_total"] == 2
-    assert body["progress"]["documents_completed"] == 1
+    assert body["progress"]["documents_completed"] == 0
     assert body["progress"]["documents_failed"] == 0
 
     drain(api)
     body = poll(api, result_id)
-    assert body["status"] == "completed"
+    assert body["status"] == "failed"
     assert body["progress"]["documents_total"] == 2
-    assert body["progress"]["documents_completed"] == 2
-    assert body["progress"]["documents_failed"] == 0
+    assert body["progress"]["documents_completed"] == 1
+    assert body["progress"]["documents_failed"] == 1
 
 
 def test_partial_failure_reports_honest_progress(api: ApiHarness) -> None:
@@ -471,11 +474,14 @@ def test_partial_failure_reports_honest_progress(api: ApiHarness) -> None:
         assert failed_task.status == "dead"
 
     body = poll(api, result_id)
-    assert body["status"] == "failed"
+    assert body["status"] == "processing"
     assert body["progress"]["documents_total"] == 2
-    assert body["progress"]["documents_completed"] == 1
+    assert body["progress"]["documents_completed"] == 0
     assert body["progress"]["documents_failed"] == 1
     assert [document["source"]["filename"] for document in body["documents"]] == [prepared.filename]
+    drain(api)
+    body = poll(api, result_id)
+    assert body["status"] == "failed"
     assert any(missing_filename in reason for reason in body["decision"]["reasons"])
 
 
@@ -517,7 +523,7 @@ def test_resurrected_file_replaces_the_prior_page_set(api: ApiHarness) -> None:
     assert count_rows(api, "documents") == 1
 
     body = poll(api, second.json()["result_id"])
-    assert body["status"] == "completed"
+    assert body["status"] == "failed"
     assert len(body["documents"]) == 1
 
 

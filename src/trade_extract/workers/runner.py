@@ -5,15 +5,17 @@ import socket
 import time
 from collections.abc import Callable
 
+from sqlalchemy import select
 from sqlalchemy.orm import Session, sessionmaker
 
 from trade_extract.config import Settings
+from trade_extract.db.models.job import Job
 from trade_extract.db.models.task import JobTask
 from trade_extract.domain.clock import Clock, SystemClock
 from trade_extract.domain.errors import DomainError
 from trade_extract.logging import configure_logging, get_logger
 from trade_extract.services import queue as queue_service
-from trade_extract.workers.handlers import finalize_submission, prepare_file
+from trade_extract.workers.handlers import extract_segment, finalize_submission, prepare_file
 
 logger = get_logger("trade_extract.worker")
 
@@ -21,10 +23,11 @@ Handler = Callable[..., None]
 
 HANDLERS: dict[str, Handler] = {
     "prepare_file": prepare_file.handle,
+    "extract_segment": extract_segment.handle,
     "finalize_submission": finalize_submission.handle,
 }
 
-DEFAULT_KINDS = ["prepare_file", "finalize_submission"]
+DEFAULT_KINDS = ["prepare_file", "extract_segment", "finalize_submission"]
 
 
 def default_worker_id() -> str:
@@ -53,6 +56,8 @@ def run_once(
         return False
 
     task_id = task.id
+    job_id = task.job_id
+    claimed_owner, claimed_attempt = task.locked_by, task.attempts
     try:
         with session_factory_() as session:
             claimed = session.get(JobTask, task_id)
@@ -65,8 +70,14 @@ def run_once(
         error_code = exc.code if isinstance(exc, DomainError) else type(exc).__name__
         error_message = str(exc) if str(exc) else type(exc).__name__
         with session_factory_() as session:
-            claimed = session.get(JobTask, task_id)
-            if claimed is not None:
+            session.scalar(select(Job).where(Job.id == job_id).with_for_update())
+            claimed = session.scalar(select(JobTask).where(JobTask.id == task_id).with_for_update())
+            if (
+                claimed is not None
+                and claimed.status == "running"
+                and claimed.locked_by == claimed_owner
+                and claimed.attempts == claimed_attempt
+            ):
                 queue_service.mark_failed(
                     session,
                     claimed,
@@ -95,7 +106,12 @@ def run_once(
 
     with session_factory_() as session:
         claimed = session.get(JobTask, task_id)
-        if claimed is not None and claimed.status == "running":
+        if (
+            claimed is not None
+            and claimed.status == "running"
+            and claimed.locked_by == claimed_owner
+            and claimed.attempts == claimed_attempt
+        ):
             queue_service.mark_succeeded(session, claimed, now=clock.now())
             session.commit()
         elif claimed is not None:

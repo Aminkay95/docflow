@@ -56,7 +56,7 @@ def test_accept_poll_worker_complete(api: ApiHarness) -> None:
     assert queued.headers["Retry-After"] == "2"
     assert queued.headers["ETag"]
 
-    assert drain(api) == 2
+    assert drain(api) == 3
 
     completed = api.client.get(f"/v1/results/{result_id}", headers=api.headers)
     assert completed.status_code == 200
@@ -65,16 +65,17 @@ def test_accept_poll_worker_complete(api: ApiHarness) -> None:
     assert len(body["documents"]) == 1
     document = body["documents"][0]
     assert document["document_type"] == "commercial_invoice"
-    assert document["status"] == "queued"
+    assert document["status"] == "unreadable"
     assert document["source"]["page_start"] == 0
     assert document["source"]["page_end"] == 0
     assert document["source"]["document_hash"].startswith("sha256:")
     assert 0.0 <= document["document_type_confidence"] <= 1.0
     assert body["conflicts"] == []
-    assert body["decision"] is None
+    assert body["decision"]["value"] == "review"
     assert body["completed_at"] is not None
     assert body["progress"]["documents_total"] == 1
-    assert body["progress"]["documents_completed"] == 1
+    assert body["progress"]["documents_completed"] == 0
+    assert body["progress"]["documents_failed"] == 1
     assert body["policy"]["version"] == 1
     assert body["policy"]["effective_at"] is not None
     assert "Retry-After" not in completed.headers
@@ -118,7 +119,7 @@ def test_replay_after_completion_returns_the_frozen_202_body(api: ApiHarness) ->
     assert second.json()["status"] == "queued"
     assert count_rows(api, "submissions") == 1
     assert count_rows(api, "files") == 1
-    assert count_rows(api, "job_tasks") == 2
+    assert count_rows(api, "job_tasks") == 3
 
 
 def test_unknown_include_value_is_rejected(api: ApiHarness) -> None:
@@ -150,6 +151,11 @@ def test_completed_job_reopens_on_new_submission(api: ApiHarness) -> None:
     with api.session_factory() as session:
         job = session.get(Job, job_id)
         assert job is not None
+        assert job.status == "review_required"
+        job.status = "completed"
+        job.terminal_at = datetime.now(UTC)
+        job.terminal_reason = "completed"
+        session.commit()
         assert job.status == "completed"
         assert job.terminal_at is not None
 
@@ -169,7 +175,7 @@ def test_completed_job_reopens_on_new_submission(api: ApiHarness) -> None:
     with api.session_factory() as session:
         job = session.get(Job, job_id)
         assert job is not None
-        assert job.status == "completed"
+        assert job.status == "review_required"
     assert count_rows(api, "submissions") == 2
     assert count_rows(api, "files") == 2
 
@@ -357,12 +363,12 @@ def test_failed_file_is_reprocessed_rather_than_counted_as_a_duplicate(
 
     with api.session_factory() as session:
         assert count_rows(api, "files") == 1
-        assert count_rows(api, "job_tasks") == 2
+        assert count_rows(api, "job_tasks") == 3
         file_status = session.execute(text("SELECT status FROM files")).scalar_one()
         assert file_status == "received"
 
     drain(api)
-    assert count_rows(api, "job_tasks") == 3
+    assert count_rows(api, "job_tasks") == 4
     completed = api.client.get(f"/v1/results/{second.json()['result_id']}", headers=api.headers)
     assert completed.status_code == 200
     assert completed.json()["status"] == "completed"

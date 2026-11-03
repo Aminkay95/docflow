@@ -19,9 +19,17 @@ class Progress(BaseModel):
 
 
 class Decision(BaseModel):
+    model_config = ConfigDict(extra="allow")
     value: Literal["pass", "review", "unreadable", "failed"]
     route: Literal["none", "extraction", "conflict"] | None = None
     reasons: list[str] = Field(default_factory=list)
+    policy_id: str | None = None
+    policy_version: int | None = None
+    policy_snapshot: dict[str, Any] | None = None
+    policy_valid: bool | None = None
+    check_version: str | None = None
+    diagnostics: list[str] = Field(default_factory=list)
+    routing: list[dict[str, Any]] = Field(default_factory=list)
 
 
 class ReviewCounts(BaseModel):

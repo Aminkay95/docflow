@@ -121,7 +121,7 @@ def test_completion_delivers_signed_event(api: ApiHarness, webhook_server: Webho
     assert len(webhook_server.requests) == 1
     request = webhook_server.requests[0]
     assert request.path == "/hook"
-    assert request.headers["X-TradeExtract-Event"] == "result.completed"
+    assert request.headers["X-TradeExtract-Event"] == "result.review_required"
     assert request.headers["X-TradeExtract-Delivery"].startswith("whd_")
     timestamp = int(request.headers["X-TradeExtract-Timestamp"])
     assert request.headers["X-TradeExtract-Signature"] == signature_for(
@@ -129,7 +129,7 @@ def test_completion_delivers_signed_event(api: ApiHarness, webhook_server: Webho
     )
 
     payload = json.loads(request.body)
-    assert payload["type"] == "result.completed"
+    assert payload["type"] == "result.review_required"
     assert payload["data"]["result_id"] == result_id
     assert payload["data"]["result_url"].endswith(f"/v1/results/{result_id}")
     assert "documents" not in payload["data"]

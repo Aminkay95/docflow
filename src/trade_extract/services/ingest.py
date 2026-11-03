@@ -15,6 +15,7 @@ from trade_extract.db.models.job import Job
 from trade_extract.db.models.policy import Policy
 from trade_extract.db.models.segment import Segment
 from trade_extract.db.models.submission import Submission
+from trade_extract.db.models.task import JobTask
 from trade_extract.db.repositories import documents as documents_repo
 from trade_extract.db.repositories import files as files_repo
 from trade_extract.db.repositories import jobs as jobs_repo
@@ -27,7 +28,6 @@ from trade_extract.domain.hashing import request_fingerprint
 from trade_extract.domain.ids import new_id
 from trade_extract.services.limits import ValidatedSubmission
 from trade_extract.services.storage import ObjectStorage, source_key
-from trade_extract.services.webhooks import enqueue_completion
 
 #: Existing files in these states are re-processed rather than counted as duplicates.
 RETRYABLE_FILE_STATUSES = ("failed", "purged")
@@ -366,16 +366,35 @@ def accept(
         submission.duplicate_count = duplicate_count
 
         if not new_documents and not resurrect:
-            submissions_repo.mark_completed(session, submission, now=now)
-            if submissions_repo.active_count_for_job(session, job.id) == 0:
-                jobs_repo.mark_completed(session, job, now=now)
-            enqueue_completion(
-                session,
-                submission=submission,
-                job=job,
-                settings=settings,
-                now=now,
+            # Reuse finalization's retained review/conflict decision. No new extraction
+            # or repeat-call accumulation behavior is introduced for duplicate files.
+            from trade_extract.workers.handlers.finalize_submission import handle
+
+            transient = JobTask(
+                id=new_id("task_"),
+                job_id=job.id,
+                submission_id=submission.id,
+                kind="finalize_submission",
+                payload={"submission_id": submission.id},
+                attempts=0,
             )
+            active_documents = (
+                session.query(Document)
+                .filter(Document.job_id == job.id, Document.status.in_(("queued", "processing")))
+                .first()
+            )
+            if active_documents is not None:
+                tasks_repo.enqueue(
+                    session,
+                    job_id=job.id,
+                    submission_id=submission.id,
+                    kind="finalize_submission",
+                    payload={"submission_id": submission.id},
+                    now=now,
+                    dedupe_key=f"finalize_submission:{submission.id}",
+                )
+            else:
+                handle(session, transient, settings=settings, clock=clock)
 
         session.commit()
     except IntegrityError as exc:
@@ -501,7 +520,7 @@ def build_result(
             sum(
                 1
                 for document, _, _ in document_rows
-                if document.status not in ("failed", "unreadable")
+                if document.status in ("extracted", "review_required", "resolved")
             )
             + duplicates
         )
@@ -516,15 +535,92 @@ def build_result(
         documents_completed = submission.duplicate_count + len(processed_files)
         documents_failed = len(failed_files)
 
-    decision = None
+    decision: dict[str, Any] | None = None
     if submission.status == "failed":
+        from trade_extract.domain.checks import CHECK_VERSION
+        from trade_extract.services.decisions import effective_policy
+
+        gate, valid_policy = effective_policy(policy.config)
         reason = submission.error_message or "the submission failed before producing a result"
-        decision = {"value": "failed", "route": "none", "reasons": [reason]}
+        decision = {
+            "value": "failed",
+            "route": "none",
+            "reasons": [reason],
+            "policy_id": policy.id,
+            "policy_version": policy.version,
+            "policy_snapshot": gate.model_dump(mode="json"),
+            "policy_valid": valid_policy,
+            "check_version": CHECK_VERSION,
+        }
 
     documents = [
         _document_object(document, segment, file_row, submission=submission, job=job)
         for document, segment, file_row in document_rows
     ]
+    from trade_extract.db.models.evidence import DecisionRecord
+    from trade_extract.db.repositories import evidence
+
+    conflicts = evidence.conflicts_for(session, job_id=job.id, client_id=submission.client_id)
+    recorded_job = session.get(DecisionRecord, f"dec_{submission.id}")
+    if recorded_job is not None:
+        decision = recorded_job.outcome
+    if (
+        decision is not None
+        and session.query(Document.id)
+        .filter(Document.job_id == job.id, Document.status == "failed")
+        .first()
+        is not None
+    ):
+        decision = {
+            **decision,
+            "value": "failed",
+            "reasons": sorted(set([*decision["reasons"], "extraction_failed"])),
+        }
+    current_conflicts = [c for c in conflicts if c["status"] == "open"]
+    if current_conflicts and decision is not None:
+        decision = {
+            **decision,
+            "value": "failed" if decision["value"] == "failed" else "review",
+            "route": "conflict",
+            "reasons": sorted(
+                set(
+                    decision["reasons"]
+                    + [f"conflict_open:{c['canonical_key']}" for c in current_conflicts]
+                )
+            ),
+        }
+    document_checks, document_decisions = evidence.document_evidence(
+        session, [record.id for record, _, _ in document_rows]
+    )
+    for output, (record, _, _) in zip(documents, document_rows, strict=True):
+        snapshot = record.extraction or {}
+        for key in ("schema_version", "fields", "tables", "extension"):
+            if key in snapshot:
+                output[key] = snapshot[key]
+        output["checks"] = document_checks.get(record.id, [])
+        output["decision"] = document_decisions.get(record.id)
+        output["conflicts"] = [
+            c for c in conflicts if any(s["document_id"] == record.id for s in c["sources"])
+        ]
+        open_document_conflicts = [c for c in output["conflicts"] if c["status"] == "open"]
+        output["review"] = {
+            "extraction_open": record.decision in ("review", "failed", "unreadable"),
+            "conflict_open": bool(open_document_conflicts),
+        }
+        if open_document_conflicts and output["decision"]:
+            output["decision"] = {
+                **output["decision"],
+                "value": output["decision"]["value"]
+                if output["decision"]["value"] in ("failed", "unreadable")
+                else "review",
+                "route": "conflict",
+                "reasons": sorted(
+                    set(
+                        output["decision"]["reasons"]
+                        + [f"conflict_open:{c['canonical_key']}" for c in open_document_conflicts]
+                    )
+                ),
+            }
     if document_id is not None:
         documents = [row for row in documents if row.get("document_id") == document_id]
 
@@ -543,7 +639,7 @@ def build_result(
         "created_at": submission.created_at,
         "completed_at": submission.completed_at,
         "documents": documents if "documents" in included else [],
-        "conflicts": [] if "conflicts" in included else [],
+        "conflicts": conflicts if "conflicts" in included else [],
         "decision": decision if "decision" in included else None,
         "review": {
             "extraction_open": job.open_review_count,

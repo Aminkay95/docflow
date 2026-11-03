@@ -685,6 +685,9 @@ components:
       type: object
       required: [code, tier, status, severity, message]
       properties:
+        check_version:
+          type: string
+          description: Versioned deterministic check set.
         code:
           type: string
         tier:
@@ -708,14 +711,21 @@ components:
 
     ConflictSource:
       type: object
-      required: [document_id, document_type, value]
+      required: [document_id, document_type, field_path, stated_value, provenance]
       properties:
         document_id:
           type: string
         document_type:
           $ref: "#/components/schemas/DocumentType"
-        value:
+        field_path:
           type: string
+        stated_value:
+          type: string
+        normalized:
+          type: [string, "null"]
+          description: Comparison only; stated_value is preserved.
+        comparison_reason:
+          type: [string, "null"]
         provenance:
           $ref: "#/components/schemas/Provenance"
 
@@ -740,7 +750,22 @@ components:
     Decision:
       type: object
       required: [value, reasons]
+      additionalProperties: true
       properties:
+        policy_id: { type: string }
+        policy_version: { type: integer, minimum: 1 }
+        policy_snapshot:
+          type: object
+          description: Effective policy used when this decision was recorded.
+          additionalProperties: true
+        policy_valid: { type: boolean }
+        check_version: { type: string }
+        diagnostics:
+          type: array
+          items: { type: string }
+        routing:
+          type: array
+          items: { type: object, additionalProperties: true }
         value:
           type: string
           enum: [pass, review, unreadable, failed]
@@ -1102,3 +1127,8 @@ components:
             type: string
         version:
           type: string
+
+# Implemented completion delivery: data.result is a Result snapshot built by the
+# polling result builder. data also contains IDs, counts, review counts and result_url.
+# Extraction and conflict review counts are independent. Terminal event types are
+# result.completed, result.review_required and result.failed.

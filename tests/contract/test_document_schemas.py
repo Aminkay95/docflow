@@ -989,9 +989,7 @@ def test_nested_array_indices_are_contiguous_per_parent_row(array_name: str) -> 
     digest = identity(document_type)
     fields = required_fields(document_type)
     for row in (0, 1):
-        fields[f"goods_lines[{row}].description"] = leaf(
-            f"Goods {row}", document_hash_value=digest
-        )
+        fields[f"goods_lines[{row}].description"] = leaf(f"Goods {row}", document_hash_value=digest)
         fields[f"goods_lines[{row}].{array_name}[0]"] = leaf(
             f"Identifier {row}", document_hash_value=digest
         )
@@ -1004,9 +1002,7 @@ def test_nested_array_indices_are_contiguous_per_parent_row(array_name: str) -> 
 
     # Across both parents the indices are still {0, 1}, but the second row
     # independently lacks index zero.
-    fields[f"goods_lines[1].{array_name}[1]"] = fields.pop(
-        f"goods_lines[1].{array_name}[0]"
-    )
+    fields[f"goods_lines[1].{array_name}[1]"] = fields.pop(f"goods_lines[1].{array_name}[0]")
     with pytest.raises(ValidationError, match=rf"goods_lines\[1\]\.{array_name}.*not contiguous"):
         model.model_validate(body)
 

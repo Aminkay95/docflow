@@ -1,0 +1,14 @@
+{
+  "origin": "synthetic",
+  "fields": {
+    "invoice.number": "INV-1",
+    "invoice.issue_date": "2026-11-03",
+    "invoice.currency": "USD",
+    "seller.name": "Synthetic Seller",
+    "buyer.name": "Synthetic Buyer",
+    "totals.line_extension_amount": "10",
+    "totals.tax_exclusive_amount": "10",
+    "totals.tax_inclusive_amount": "10",
+    "totals.payable_amount": "10"
+  }
+}

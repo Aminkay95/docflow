@@ -534,3 +534,28 @@ persist these caches, or allow approved first-use downloads. Import-only verific
 from model initialization and inference accuracy; injected backend tests do not establish either.
 The adapter follows the official PPStructureV3 `overall_ocr_res` and `table_res_list` contract:
 https://www.paddleocr.ai/main/en/version3.x/pipeline_usage/PP-StructureV3.html .
+
+## Stories 7-10 implemented limits
+
+Invoice segments now enqueue `extract_segment`; finalization waits for document
+extraction, serializes reconciliation under the job lock, and snapshots completion
+through the same result builder used by polling. Provider/OCR/storage inference runs
+outside the extraction database transaction. A task lease check rejects stale writes;
+retries reuse the immutable document snapshot and retained check/decision rows.
+Unreadable evidence never reaches a reader. Noninvoice types remain full-review
+placeholders and no additional extraction type is activated.
+
+`checks`, `decisions`, `conflicts`, `conflict_sources` and separate-track `review_items`
+retain versioned outcomes and portable evidence. Full review and invoice pass disabled
+are policy defaults. Invalid policy configuration fails closed; every decision records
+an effective snapshot, policy identity/version and check version. Arithmetic uses
+Decimal and computed amounts occur only in check outcomes. Comparisons preserve each
+source value and never resolve conflicts or choose winners. No review console or trust
+promotion is included. Evaluation implementation and corpus limits are documented in
+[evaluation.md](evaluation.md); real accuracy remains unmeasured.
+
+Readers and table reconciliation operate in conditioned-page coordinates. Before the
+worker persists an extraction snapshot, it inverse-maps every field, extension and
+alternative rectangle onto the original rendered source page. Public normalized boxes
+therefore overlay the caller's source page. Perspective produces enclosing rectangles;
+the retained page homography remains available for exact point/polygon mapping.

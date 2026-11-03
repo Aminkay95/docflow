@@ -1,0 +1,564 @@
+{
+  "job_id": "synthetic-conflict-job",
+  "origin": "synthetic",
+  "complete": true,
+  "documents": [
+    {
+      "document_id": "invoice-0",
+      "file": "invoice-0.json",
+      "document_type": "commercial_invoice",
+      "fields": {
+        "invoice.number": {
+          "value": "INV-1",
+          "value_type": "string",
+          "page_index": 0,
+          "bbox": {
+            "x0": 0.1,
+            "y0": 0.02,
+            "x1": 0.8,
+            "y1": 0.04
+          }
+        },
+        "invoice.issue_date": {
+          "value": "2026-11-03",
+          "value_type": "date",
+          "page_index": 0,
+          "bbox": {
+            "x0": 0.1,
+            "y0": 0.06,
+            "x1": 0.8,
+            "y1": 0.08
+          }
+        },
+        "invoice.currency": {
+          "value": "USD",
+          "value_type": "enum",
+          "page_index": 0,
+          "bbox": {
+            "x0": 0.1,
+            "y0": 0.1,
+            "x1": 0.8,
+            "y1": 0.12
+          }
+        },
+        "seller.name": {
+          "value": "Synthetic Seller",
+          "value_type": "string",
+          "page_index": 0,
+          "bbox": {
+            "x0": 0.1,
+            "y0": 0.13999999999999999,
+            "x1": 0.8,
+            "y1": 0.16
+          }
+        },
+        "buyer.name": {
+          "value": "Synthetic Buyer",
+          "value_type": "string",
+          "page_index": 0,
+          "bbox": {
+            "x0": 0.1,
+            "y0": 0.18,
+            "x1": 0.8,
+            "y1": 0.2
+          }
+        },
+        "totals.line_extension_amount": {
+          "value": "10",
+          "value_type": "decimal",
+          "page_index": 0,
+          "bbox": {
+            "x0": 0.1,
+            "y0": 0.22,
+            "x1": 0.8,
+            "y1": 0.24000000000000002
+          }
+        },
+        "totals.tax_exclusive_amount": {
+          "value": "10",
+          "value_type": "decimal",
+          "page_index": 0,
+          "bbox": {
+            "x0": 0.1,
+            "y0": 0.26,
+            "x1": 0.8,
+            "y1": 0.27999999999999997
+          }
+        },
+        "totals.tax_inclusive_amount": {
+          "value": "10",
+          "value_type": "decimal",
+          "page_index": 0,
+          "bbox": {
+            "x0": 0.1,
+            "y0": 0.30000000000000004,
+            "x1": 0.8,
+            "y1": 0.32
+          }
+        },
+        "totals.payable_amount": {
+          "value": "10",
+          "value_type": "decimal",
+          "page_index": 0,
+          "bbox": {
+            "x0": 0.1,
+            "y0": 0.34,
+            "x1": 0.8,
+            "y1": 0.36
+          }
+        },
+        "invoice.due_date": {
+          "value": null,
+          "value_type": "date"
+        },
+        "invoice.type_code": {
+          "value": null,
+          "value_type": "enum"
+        },
+        "invoice.tax_point_date": {
+          "value": null,
+          "value_type": "date"
+        },
+        "invoice.note": {
+          "value": null,
+          "value_type": "string"
+        },
+        "seller.identifier": {
+          "value": null,
+          "value_type": "string"
+        },
+        "seller.address.line1": {
+          "value": null,
+          "value_type": "string"
+        },
+        "seller.address.city": {
+          "value": null,
+          "value_type": "string"
+        },
+        "seller.address.country": {
+          "value": null,
+          "value_type": "enum"
+        },
+        "buyer.identifier": {
+          "value": null,
+          "value_type": "string"
+        },
+        "buyer.address.line1": {
+          "value": null,
+          "value_type": "string"
+        },
+        "buyer.address.city": {
+          "value": null,
+          "value_type": "string"
+        },
+        "buyer.address.country": {
+          "value": null,
+          "value_type": "enum"
+        },
+        "ship_to.name": {
+          "value": null,
+          "value_type": "string"
+        },
+        "ship_to.address.line1": {
+          "value": null,
+          "value_type": "string"
+        },
+        "ship_to.address.city": {
+          "value": null,
+          "value_type": "string"
+        },
+        "ship_to.address.country": {
+          "value": null,
+          "value_type": "enum"
+        },
+        "order.reference": {
+          "value": null,
+          "value_type": "string"
+        },
+        "despatch_advice.reference": {
+          "value": null,
+          "value_type": "string"
+        },
+        "receiving_advice.reference": {
+          "value": null,
+          "value_type": "string"
+        },
+        "bill_of_lading.number": {
+          "value": null,
+          "value_type": "string"
+        },
+        "payment.terms": {
+          "value": null,
+          "value_type": "string"
+        },
+        "payment.means_code": {
+          "value": null,
+          "value_type": "enum"
+        },
+        "payment.iban": {
+          "value": null,
+          "value_type": "string"
+        },
+        "incoterm.code": {
+          "value": null,
+          "value_type": "enum"
+        },
+        "incoterm.location": {
+          "value": null,
+          "value_type": "string"
+        },
+        "shipment.gross_weight_kg": {
+          "value": null,
+          "value_type": "decimal"
+        },
+        "shipment.gross_weight_unit": {
+          "value": null,
+          "value_type": "enum"
+        },
+        "shipment.net_weight_kg": {
+          "value": null,
+          "value_type": "decimal"
+        },
+        "shipment.net_weight_unit": {
+          "value": null,
+          "value_type": "enum"
+        },
+        "shipment.package_count": {
+          "value": null,
+          "value_type": "integer"
+        },
+        "shipment.package_type": {
+          "value": null,
+          "value_type": "enum"
+        },
+        "shipment.vessel": {
+          "value": null,
+          "value_type": "string"
+        },
+        "shipment.voyage": {
+          "value": null,
+          "value_type": "string"
+        },
+        "shipment.port_of_loading": {
+          "value": null,
+          "value_type": "string"
+        },
+        "shipment.port_of_discharge": {
+          "value": null,
+          "value_type": "string"
+        },
+        "shipment.country_of_origin": {
+          "value": null,
+          "value_type": "enum"
+        },
+        "shipment.marks_and_numbers": {
+          "value": null,
+          "value_type": "string"
+        },
+        "totals.tax_amount": {
+          "value": null,
+          "value_type": "decimal"
+        },
+        "totals.allowance_total": {
+          "value": null,
+          "value_type": "decimal"
+        },
+        "totals.charge_total": {
+          "value": null,
+          "value_type": "decimal"
+        },
+        "totals.prepaid_amount": {
+          "value": null,
+          "value_type": "decimal"
+        },
+        "totals.amount_in_words": {
+          "value": null,
+          "value_type": "string"
+        }
+      },
+      "table_rows": {
+        "line_items": 0
+      }
+    },
+    {
+      "document_id": "invoice-1",
+      "file": "invoice-1.json",
+      "document_type": "commercial_invoice",
+      "fields": {
+        "invoice.number": {
+          "value": "INV-1",
+          "value_type": "string",
+          "page_index": 0,
+          "bbox": {
+            "x0": 0.1,
+            "y0": 0.02,
+            "x1": 0.8,
+            "y1": 0.04
+          }
+        },
+        "invoice.issue_date": {
+          "value": "2026-11-03",
+          "value_type": "date",
+          "page_index": 0,
+          "bbox": {
+            "x0": 0.1,
+            "y0": 0.06,
+            "x1": 0.8,
+            "y1": 0.08
+          }
+        },
+        "invoice.currency": {
+          "value": "EUR",
+          "value_type": "enum",
+          "page_index": 0,
+          "bbox": {
+            "x0": 0.1,
+            "y0": 0.1,
+            "x1": 0.8,
+            "y1": 0.12
+          }
+        },
+        "seller.name": {
+          "value": "Synthetic Seller",
+          "value_type": "string",
+          "page_index": 0,
+          "bbox": {
+            "x0": 0.1,
+            "y0": 0.13999999999999999,
+            "x1": 0.8,
+            "y1": 0.16
+          }
+        },
+        "buyer.name": {
+          "value": "Synthetic Buyer",
+          "value_type": "string",
+          "page_index": 0,
+          "bbox": {
+            "x0": 0.1,
+            "y0": 0.18,
+            "x1": 0.8,
+            "y1": 0.2
+          }
+        },
+        "totals.line_extension_amount": {
+          "value": "10",
+          "value_type": "decimal",
+          "page_index": 0,
+          "bbox": {
+            "x0": 0.1,
+            "y0": 0.22,
+            "x1": 0.8,
+            "y1": 0.24000000000000002
+          }
+        },
+        "totals.tax_exclusive_amount": {
+          "value": "10",
+          "value_type": "decimal",
+          "page_index": 0,
+          "bbox": {
+            "x0": 0.1,
+            "y0": 0.26,
+            "x1": 0.8,
+            "y1": 0.27999999999999997
+          }
+        },
+        "totals.tax_inclusive_amount": {
+          "value": "10",
+          "value_type": "decimal",
+          "page_index": 0,
+          "bbox": {
+            "x0": 0.1,
+            "y0": 0.30000000000000004,
+            "x1": 0.8,
+            "y1": 0.32
+          }
+        },
+        "totals.payable_amount": {
+          "value": "10",
+          "value_type": "decimal",
+          "page_index": 0,
+          "bbox": {
+            "x0": 0.1,
+            "y0": 0.34,
+            "x1": 0.8,
+            "y1": 0.36
+          }
+        },
+        "invoice.due_date": {
+          "value": null,
+          "value_type": "date"
+        },
+        "invoice.type_code": {
+          "value": null,
+          "value_type": "enum"
+        },
+        "invoice.tax_point_date": {
+          "value": null,
+          "value_type": "date"
+        },
+        "invoice.note": {
+          "value": null,
+          "value_type": "string"
+        },
+        "seller.identifier": {
+          "value": null,
+          "value_type": "string"
+        },
+        "seller.address.line1": {
+          "value": null,
+          "value_type": "string"
+        },
+        "seller.address.city": {
+          "value": null,
+          "value_type": "string"
+        },
+        "seller.address.country": {
+          "value": null,
+          "value_type": "enum"
+        },
+        "buyer.identifier": {
+          "value": null,
+          "value_type": "string"
+        },
+        "buyer.address.line1": {
+          "value": null,
+          "value_type": "string"
+        },
+        "buyer.address.city": {
+          "value": null,
+          "value_type": "string"
+        },
+        "buyer.address.country": {
+          "value": null,
+          "value_type": "enum"
+        },
+        "ship_to.name": {
+          "value": null,
+          "value_type": "string"
+        },
+        "ship_to.address.line1": {
+          "value": null,
+          "value_type": "string"
+        },
+        "ship_to.address.city": {
+          "value": null,
+          "value_type": "string"
+        },
+        "ship_to.address.country": {
+          "value": null,
+          "value_type": "enum"
+        },
+        "order.reference": {
+          "value": null,
+          "value_type": "string"
+        },
+        "despatch_advice.reference": {
+          "value": null,
+          "value_type": "string"
+        },
+        "receiving_advice.reference": {
+          "value": null,
+          "value_type": "string"
+        },
+        "bill_of_lading.number": {
+          "value": null,
+          "value_type": "string"
+        },
+        "payment.terms": {
+          "value": null,
+          "value_type": "string"
+        },
+        "payment.means_code": {
+          "value": null,
+          "value_type": "enum"
+        },
+        "payment.iban": {
+          "value": null,
+          "value_type": "string"
+        },
+        "incoterm.code": {
+          "value": null,
+          "value_type": "enum"
+        },
+        "incoterm.location": {
+          "value": null,
+          "value_type": "string"
+        },
+        "shipment.gross_weight_kg": {
+          "value": null,
+          "value_type": "decimal"
+        },
+        "shipment.gross_weight_unit": {
+          "value": null,
+          "value_type": "enum"
+        },
+        "shipment.net_weight_kg": {
+          "value": null,
+          "value_type": "decimal"
+        },
+        "shipment.net_weight_unit": {
+          "value": null,
+          "value_type": "enum"
+        },
+        "shipment.package_count": {
+          "value": null,
+          "value_type": "integer"
+        },
+        "shipment.package_type": {
+          "value": null,
+          "value_type": "enum"
+        },
+        "shipment.vessel": {
+          "value": null,
+          "value_type": "string"
+        },
+        "shipment.voyage": {
+          "value": null,
+          "value_type": "string"
+        },
+        "shipment.port_of_loading": {
+          "value": null,
+          "value_type": "string"
+        },
+        "shipment.port_of_discharge": {
+          "value": null,
+          "value_type": "string"
+        },
+        "shipment.country_of_origin": {
+          "value": null,
+          "value_type": "enum"
+        },
+        "shipment.marks_and_numbers": {
+          "value": null,
+          "value_type": "string"
+        },
+        "totals.tax_amount": {
+          "value": null,
+          "value_type": "decimal"
+        },
+        "totals.allowance_total": {
+          "value": null,
+          "value_type": "decimal"
+        },
+        "totals.charge_total": {
+          "value": null,
+          "value_type": "decimal"
+        },
+        "totals.prepaid_amount": {
+          "value": null,
+          "value_type": "decimal"
+        },
+        "totals.amount_in_words": {
+          "value": null,
+          "value_type": "string"
+        }
+      },
+      "table_rows": {
+        "line_items": 0
+      }
+    }
+  ],
+  "conflicts": [
+    "invoice.currency"
+  ]
+}

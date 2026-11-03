@@ -209,6 +209,14 @@ def enqueue_completion(
         event_type=event_type,
         settings=settings,
         now=now,
+        conflict_count=job.open_conflict_count,
+    )
+    from trade_extract.api.schemas.results import Result
+    from trade_extract.services.ingest import build_result
+
+    session.flush()
+    payload["data"]["result"] = Result.model_validate(build_result(session, submission)).model_dump(
+        mode="json"
     )
     return webhook_repo.enqueue(
         session,

@@ -33,5 +33,6 @@ def create_active(
         status="active",
         activated_at=now,
     )
+    policy.validated_gate()
     session.add(policy)
     return policy

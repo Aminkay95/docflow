@@ -4,17 +4,21 @@ import random
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 
-from sqlalchemy import String, bindparam, text
+from sqlalchemy import String, bindparam, select, text
 from sqlalchemy.dialects.postgresql import ARRAY
 from sqlalchemy.orm import Session
 
 from trade_extract.config import Settings
+from trade_extract.db.models.document import Document
 from trade_extract.db.models.job import Job
+from trade_extract.db.models.policy import Policy
 from trade_extract.db.models.submission import Submission
 from trade_extract.db.models.task import JobTask
 from trade_extract.db.repositories import files as files_repo
 from trade_extract.db.repositories import jobs as jobs_repo
 from trade_extract.db.repositories import submissions as submissions_repo
+from trade_extract.db.repositories.evidence import review_counts, save_document
+from trade_extract.services.decisions import decide_document
 from trade_extract.services.webhooks import enqueue_completion
 
 STALE_REQUEUE_LIMIT_CODE = "stale_requeue_limit"
@@ -137,7 +141,16 @@ def requeue_stale(
     )
     requeued = 0
     dead: list[JobTask] = []
-    for task in stale:
+    for task in sorted(stale, key=lambda t: (t.job_id, t.id)):
+        session.scalar(
+            select(Job)
+            .where(Job.id == task.job_id)
+            .with_for_update()
+            .execution_options(autoflush=False)
+        )
+        session.refresh(task, with_for_update=True)
+        if task.status != "running" or task.locked_at is None or task.locked_at >= older_than:
+            continue
         task.requeues += 1
         if max_requeues is not None and task.requeues > max_requeues:
             mark_dead(
@@ -188,6 +201,12 @@ def terminalise_dead_task(
 ) -> None:
     """Failure is terminal: a dead task fails its file and submission, then notifies."""
 
+    job = session.scalar(
+        select(Job)
+        .where(Job.id == task.job_id)
+        .with_for_update()
+        .execution_options(autoflush=False)
+    )
     payload = task.payload or {}
     submission_id = task.submission_id or payload.get("submission_id")
     file_id = payload.get("file_id")
@@ -198,15 +217,72 @@ def terminalise_dead_task(
             submission_id = submission_id or file_row.submission_id
 
     submission = session.get(Submission, submission_id) if submission_id else None
-    job = session.get(Job, task.job_id)
     if submission is None or job is None:
+        return
+    if task.kind == "extract_segment" and task.document_id:
+        document = session.get(Document, task.document_id)
+        if document is not None and document.status in ("queued", "processing"):
+            document.status = "failed"
+            document.decision = "failed"
+            document.decision_reason = code
+            document.updated_at = now
+            policy = session.get(Policy, job.policy_id)
+            if policy:
+                decision = decide_document(
+                    document_type=document.document_type,
+                    status="failed",
+                    checks=[],
+                    policy_id=policy.id,
+                    policy_version=policy.version,
+                    config=policy.config,
+                )
+                decision["diagnostics"] = [code]
+                save_document(session, document, [], decision)
+
+    # Completion belongs to finalization whenever extraction exists. A failed prepare
+    # keeps the established immediate-failure behavior only when no extraction is active.
+    from trade_extract.db.repositories import tasks as tasks_repo
+
+    has_extraction = task.kind != "finalize_submission" and (
+        task.kind == "extract_segment"
+        or session.scalar(
+            select(Document.id).where(Document.submission_id == submission.id).limit(1)
+        )
+        is not None
+        or session.scalar(
+            select(JobTask.id)
+            .where(
+                JobTask.submission_id == submission.id,
+                JobTask.id != task.id,
+                JobTask.kind.in_(("prepare_file", "extract_segment")),
+                JobTask.status.in_(("queued", "running")),
+            )
+            .limit(1)
+        )
+        is not None
+    )
+    if has_extraction:
+        tasks_repo.rearm(
+            session,
+            dedupe_key=f"finalize_submission:{submission.id}",
+            job_id=job.id,
+            submission_id=submission.id,
+            kind="finalize_submission",
+            payload={"submission_id": submission.id, "job_id": job.id},
+            now=now,
+        )
         return
 
     changed = submissions_repo.mark_failed(session, submission, now=now, code=code, message=message)
     if not changed:
         return
 
-    if submissions_repo.active_count_for_job(session, job.id) == 0:
+    job.open_review_count, job.open_conflict_count = review_counts(session, job.id)
+    if job.open_review_count or job.open_conflict_count:
+        job.status = "review_required"
+        job.terminal_at = None
+        job.terminal_reason = None
+    elif submissions_repo.active_count_for_job(session, job.id) == 0:
         jobs_repo.mark_failed(session, job, now=now)
 
     enqueue_completion(

@@ -3,6 +3,13 @@
 from trade_extract.db.models.api_key import ApiKey
 from trade_extract.db.models.client import Client
 from trade_extract.db.models.document import Document
+from trade_extract.db.models.evidence import (
+    Check,
+    ConflictRecord,
+    ConflictSource,
+    DecisionRecord,
+    ReviewItem,
+)
 from trade_extract.db.models.file import File
 from trade_extract.db.models.job import Job
 from trade_extract.db.models.page import Page
@@ -18,6 +25,11 @@ __all__ = [
     "ApiKey",
     "Client",
     "Document",
+    "Check",
+    "ConflictRecord",
+    "ConflictSource",
+    "DecisionRecord",
+    "ReviewItem",
     "File",
     "Job",
     "JobTask",

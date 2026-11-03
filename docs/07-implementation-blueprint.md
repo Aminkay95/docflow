@@ -1010,3 +1010,29 @@ persist these caches, or allow approved first-use downloads. Import-only verific
 from model initialization and inference accuracy; injected backend tests do not establish either.
 The adapter follows the official PPStructureV3 `overall_ocr_res` and `table_res_list` contract:
 https://www.paddleocr.ai/main/en/version3.x/pipeline_usage/PP-StructureV3.html .
+
+## Stories 7-10 implementation
+
+The invoice worker lifecycle, INV-001 through INV-014, validated gate policy,
+canonical job conflicts and retained review items are implemented. Check identities
+include concrete field paths so repeated line checks remain independently auditable.
+Decision JSON records effective policy/check versions, diagnostics and routing
+snapshots. An open conflict always blocks job pass and reports every source, including
+sources that agree with one another. Existing sources and resolved conflicts are not
+rewritten. A later occurrence after resolution creates a new open conflict.
+
+The policy defaults to `invoice_pass_enabled=false`, `review_depth=full` and
+`arithmetic_tolerance="0.01"`. Only an explicitly enabled policy with review depth
+`checks`, all fourteen checks accounted for, and no blocking outcomes, unreadable
+pages or open conflicts may pass. Confidence has no gate input. Unsupported amount
+word forms warn; malformed arithmetic operands fail. No duty, levies or CIF arithmetic
+is performed. Noninvoice extraction, review console, trust promotion and repeat-call
+accumulation features remain outside this implementation.
+
+The evaluator accepts validated complete-job manifests and invokes an injected pipeline,
+then reports origins independently with denominators and Wilson intervals. The authored
+synthetic adapter exercises the actual extraction/check/decision/conflict services;
+PostgreSQL lifecycle tests exercise persistence and outbox parity. Synthetic results do
+not establish model accuracy or justify threshold changes. See [evaluation.md](evaluation.md)
+for CLI, corpus intake and scratch-database adapter instructions. Real evaluation and
+calibration remain pending a labelled real corpus.

@@ -243,7 +243,7 @@ def handle(
     session.flush()
 
     for spec, segment_id in inserted_segments:
-        documents_repo.create_for_segment(
+        document = documents_repo.create_for_segment(
             session,
             document_id=new_id("doc_"),
             job_id=file_row.job_id,
@@ -271,6 +271,39 @@ def handle(
             template_fingerprint=spec.fingerprint,
             now=now,
         )
+        session.flush()
+        if spec.document_type == "commercial_invoice":
+            tasks_repo.enqueue(
+                session,
+                job_id=file_row.job_id,
+                submission_id=file_row.submission_id,
+                document_id=document.id,
+                segment_id=segment_id,
+                kind="extract_segment",
+                now=now,
+                dedupe_key=f"extract_segment:{document.id}",
+            )
+        else:
+            from trade_extract.db.models.policy import Policy
+            from trade_extract.db.repositories.evidence import save_document
+            from trade_extract.services.decisions import decide_document
+
+            policy = session.get(Policy, job.policy_id)
+            if policy is None:
+                raise ValueError("missing_policy")
+            decision = decide_document(
+                document_type=spec.document_type,
+                status="extracted",
+                checks=[],
+                policy_id=policy.id,
+                policy_version=policy.version,
+                config=policy.config,
+            )
+            decision["diagnostics"] = ["document_type_not_activated"]
+            document.status = "review_required"
+            document.decision = "review"
+            document.decision_reason = "; ".join(decision["reasons"])
+            save_document(session, document, [], decision)
 
     files_repo.mark_processed(session, file_row, now=now)
 
