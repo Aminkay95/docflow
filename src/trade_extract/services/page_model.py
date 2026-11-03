@@ -8,6 +8,8 @@ from pathlib import Path
 from typing import Any
 
 from trade_extract.domain import errors
+from trade_extract.domain.provenance import BBox
+from trade_extract.domain.readers import TextCharacter
 
 #: Explicit decompression-bomb ceiling for Pillow-decoded image containers.
 _MAX_IMAGE_PIXELS = 100_000_000
@@ -39,6 +41,7 @@ class PageRendering:
     dpi: int
     rotation_deg: float
     text: str
+    characters: tuple[TextCharacter, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -225,6 +228,38 @@ def _encode_jpeg(image: Any, quality: int) -> bytes:
     return buffer.getvalue()
 
 
+def _text_characters(
+    text_page: Any, width: float, height: float, rotation: int = 0
+) -> tuple[TextCharacter, ...]:
+    """PDFium character rectangles transformed from PDF bottom-left to normalized top-left."""
+    characters = []
+    if rotation in (90, 270):
+        width, height = height, width
+    for index in range(text_page.count_chars()):
+        text = text_page.get_text_range(index, 1)
+        left, bottom, right, top = text_page.get_charbox(index)
+
+        # PDFium can report glyph overhangs outside the media box. Clip to the page.
+        def clip(value: float) -> float:
+            return min(1.0, max(0.0, value))
+
+        bbox = BBox(
+            x0=clip(left / width),
+            y0=clip(1 - top / height),
+            x1=clip(right / width),
+            y1=clip(1 - bottom / height),
+        )
+        if rotation == 90:
+            bbox = BBox(x0=1 - bbox.y1, y0=bbox.x0, x1=1 - bbox.y0, y1=bbox.x1)
+        elif rotation == 180:
+            bbox = BBox(x0=1 - bbox.x1, y0=1 - bbox.y1, x1=1 - bbox.x0, y1=1 - bbox.y0)
+        elif rotation == 270:
+            bbox = BBox(x0=bbox.y0, y0=1 - bbox.x1, x1=bbox.y1, y1=1 - bbox.x0)
+        for character in text:
+            characters.append(TextCharacter(character, bbox))
+    return tuple(characters)
+
+
 def _thumbnail(image: Any, max_px: int) -> Any:
     from PIL import Image
 
@@ -284,6 +319,9 @@ def _render_pdf(
                 text_page = page.get_textpage()
                 try:
                     text = text_page.get_text_bounded() or ""
+                    characters = _text_characters(
+                        text_page, page_width_pt, page_height_pt, page.get_rotation()
+                    )
                 finally:
                     text_page.close()
                 rotation_deg = float(page.get_rotation())
@@ -306,6 +344,7 @@ def _render_pdf(
                 dpi=dpi,
                 rotation_deg=rotation_deg,
                 text=text,
+                characters=characters,
             )
     except errors.DomainError:
         raise

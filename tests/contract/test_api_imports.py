@@ -7,7 +7,7 @@ from pathlib import Path
 import pytest
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
-FORBIDDEN = ("paddleocr", "cv2", "numpy", "pypdfium2")
+FORBIDDEN = ("paddleocr", "cv2", "numpy", "pypdfium2", "trade_extract.providers")
 
 pytestmark = pytest.mark.contract
 

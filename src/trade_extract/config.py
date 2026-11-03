@@ -4,7 +4,7 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Literal
 
-from pydantic import Field, field_validator, model_validator
+from pydantic import Field, SecretStr, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 _PLACEHOLDER_MARKERS = (
@@ -42,6 +42,19 @@ class Settings(BaseSettings):
     s3_region: str = "auto"
 
     base_url: str = "http://localhost:8000"
+
+    provider: Literal["mock", "deepseek"] = "mock"
+    deepseek_api_key: SecretStr = SecretStr("")
+    deepseek_base_url: str = "https://api.deepseek.com"
+    deepseek_vision_model: Literal["deepseek-flash"] = "deepseek-flash"
+    deepseek_text_model: str = "deepseek-v4-pro"
+    provider_timeout_seconds: float = Field(default=60, gt=0, le=300)
+    provider_connect_timeout_seconds: float = Field(default=5, gt=0, le=60)
+    provider_max_attempts: int = Field(default=3, ge=1, le=5)
+    provider_max_repairs: int = Field(default=2, ge=0, le=2)
+    provider_backoff_max_seconds: float = Field(default=30, gt=0, le=60)
+    provider_max_images: int = Field(default=20, ge=1, le=100)
+    provider_max_image_bytes: int = Field(default=20_000_000, ge=1, le=50_000_000)
 
     max_documents_per_group: int = Field(default=20, ge=1, le=100)
     max_file_bytes: int = Field(default=26_214_400, ge=1024)
@@ -89,6 +102,10 @@ class Settings(BaseSettings):
 
     @model_validator(mode="after")
     def _resolve_limits_and_check_secrets(self) -> Settings:
+        if self.provider == "deepseek" and not self.deepseek_api_key.get_secret_value().strip():
+            raise ValueError("DEEPSEEK_API_KEY is required when PROVIDER=deepseek")
+        if not self.deepseek_base_url.startswith("https://"):
+            raise ValueError("DEEPSEEK_BASE_URL must use HTTPS")
         if self.max_request_bytes == 0:
             overhead = 8 * 1024 * 1024
             self.max_request_bytes = self.max_documents_per_group * self.max_file_bytes + overhead

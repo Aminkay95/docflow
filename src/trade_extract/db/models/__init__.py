@@ -7,6 +7,7 @@ from trade_extract.db.models.file import File
 from trade_extract.db.models.job import Job
 from trade_extract.db.models.page import Page
 from trade_extract.db.models.policy import Policy
+from trade_extract.db.models.provider_call import ProviderCall
 from trade_extract.db.models.reviewer import Reviewer
 from trade_extract.db.models.segment import Segment
 from trade_extract.db.models.submission import Submission
@@ -22,6 +23,7 @@ __all__ = [
     "JobTask",
     "Page",
     "Policy",
+    "ProviderCall",
     "Reviewer",
     "Segment",
     "Submission",
