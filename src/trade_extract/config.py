@@ -56,6 +56,20 @@ class Settings(BaseSettings):
     provider_max_images: int = Field(default=20, ge=1, le=100)
     provider_max_image_bytes: int = Field(default=20_000_000, ge=1, le=50_000_000)
 
+    routing_version: str = "reader-routing-v1-provisional"
+    routing_min_text_characters: int = Field(default=40, ge=1, le=100000)
+    routing_dense_row_threshold: int = Field(default=20, ge=1)
+    ocr_max_pixels: int = Field(default=40_000_000, ge=1)
+    ocr_max_spans: int = Field(default=10000, ge=1)
+    ocr_max_regions: int = Field(default=100, ge=1)
+    ocr_max_rows: int = Field(default=2000, ge=1)
+    ocr_max_cells: int = Field(default=20000, ge=1)
+    ocr_max_html_bytes: int = Field(default=1000000, ge=1)
+    table_max_crops: int = Field(default=2000, ge=1)
+    table_max_crop_pixels: int = Field(default=8_000_000, ge=1)
+    table_max_total_crop_pixels: int = Field(default=80_000_000, ge=1)
+    table_max_batches: int = Field(default=200, ge=1)
+
     max_documents_per_group: int = Field(default=20, ge=1, le=100)
     max_file_bytes: int = Field(default=26_214_400, ge=1024)
     max_pages_per_file: int = Field(default=500, ge=1)

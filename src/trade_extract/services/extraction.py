@@ -12,17 +12,27 @@ from typing import Any
 
 from pydantic import ValidationError
 
+from trade_extract.config import Settings
 from trade_extract.domain.enums import DocumentStatus
 from trade_extract.domain.fields import Agreement, Field, FieldAlternative, ValueType
 from trade_extract.domain.hashing import stable_json
 from trade_extract.domain.inference import ExtractionOutcome, InferenceRequest, ProviderError
-from trade_extract.domain.provenance import BBox, Provenance
-from trade_extract.domain.readers import FieldCandidate, PageInput
+from trade_extract.domain.provenance import BBox, Provenance, ReaderKind
+from trade_extract.domain.readers import FieldCandidate, PageFeatures, PageInput, TableInventory
 from trade_extract.providers.base import ModelProvider
 from trade_extract.schemas.base import DocumentEnvelope, EnvelopeSource, TableMeta
 from trade_extract.schemas.registry import get_schema
 from trade_extract.services.readers import Reader, TextLayerReader, VisionReader
+from trade_extract.services.readers.base import partial_model
+from trade_extract.services.readers.paddle import (
+    PaddleReader,
+    contains,
+    validate_evidence,
+    verify_ocr_box,
+)
 from trade_extract.services.readers.text_layer import verify_text_box
+from trade_extract.services.routing import route_page
+from trade_extract.services.tables import build_inventory, native_crops, reconcile
 
 SelectionPolicy = Callable[[tuple[FieldCandidate, ...]], FieldCandidate]
 
@@ -119,9 +129,31 @@ def extract(
     readers: Sequence[Reader] | None = None,
     max_repairs: int = 2,
     select: SelectionPolicy = stable_selection,
+    settings: Settings | None = None,
+    _structure_pass: int = 0,
 ) -> ExtractionOutcome:
+    routes: tuple[Any, ...] = ()
+    inventory = TableInventory()
+    diagnostics: list[str] = []
+
+    def outcome(*args: Any, **kwargs: Any) -> ExtractionOutcome:
+        kwargs.setdefault("routes", routes)
+        kwargs.setdefault("inventory", inventory)
+        kwargs.setdefault("diagnostics", tuple(diagnostics))
+        return ExtractionOutcome(*args, **kwargs)
+
     if not 0 <= max_repairs <= 2:
         raise ValueError("max_repairs must be between zero and two")
+    settings = settings or Settings()
+    configured = (
+        tuple(readers)
+        if readers is not None
+        else (TextLayerReader(), PaddleReader(settings), VisionReader())
+    )
+    available = {r.name for r in configured}
+    routes = tuple(route_page(p, settings, available) for p in pages)
+    if len(pages) > settings.max_pages_per_file:
+        return outcome("extraction_failed", errors=("extraction_page_budget_exhausted",))
     spec = get_schema(document_type)
     usable = tuple(page for page in pages if not page.is_unreadable)
     unreadable_errors = tuple(
@@ -131,7 +163,7 @@ def extract(
         for reason in (page.unreadable_reasons or ("unreadable",))
     )
     if not usable:
-        return ExtractionOutcome("unreadable", errors=("no_readable_pages", *unreadable_errors))
+        return outcome("unreadable", errors=("no_readable_pages", *unreadable_errors))
     page_map = {page.page_index: page for page in usable}
     if len(page_map) != len(usable) or any(
         not source.page_start <= page.page_index <= source.page_end for page in usable
@@ -142,7 +174,7 @@ def extract(
     request = InferenceRequest(
         document_type=document_type,
         source_hash=source.document_hash,
-        schema_json=spec.json_schema(),
+        schema_json=partial_model(document_type).json_schema(),
         segment_id=segment_id,
         evidence=json.dumps(
             {
@@ -152,23 +184,134 @@ def extract(
             }
         ),
     )
+    route_map = {r.page_index: r for r in routes}
+    paddle = next((r for r in configured if isinstance(r, PaddleReader)), None)
+    if paddle is not None:
+        paddle = PaddleReader(settings, backend=paddle.backend)
+    prepared = []
+    for p in usable:
+        if p.ocr is not None:
+            try:
+                validate_evidence(p.ocr, p, settings)
+            except ValueError:
+                return outcome(
+                    "extraction_failed", errors=("ocr_cached_evidence_invalid", *unreadable_errors)
+                )
+        if paddle is not None and ReaderKind.PADDLE in route_map[p.page_index].readers:
+            evidence = paddle.inspect(p)
+            p = replace(p, ocr=evidence)
+            diagnostics.extend(f"page:{p.page_index}:{d}" for d in evidence.diagnostics)
+        if p.ocr is not None and (
+            p.ocr.structure_status == "error"
+            or sum(not r.header for t in p.ocr.tables for r in t.rows)
+            >= settings.routing_dense_row_threshold
+        ):
+            p = replace(p, features=replace(p.features or PageFeatures(), dense_table=True))
+        prepared.append(p)
+    usable = tuple(prepared)
+    page_map = {p.page_index: p for p in usable}
+    routes = tuple(
+        route_page(
+            p,
+            settings,
+            available
+            - ({ReaderKind.PADDLE} if p.ocr is not None and p.ocr.status != "ok" else set()),
+        )
+        for p in (*usable, *(p for p in pages if p.is_unreadable))
+    )
+    route_map = {r.page_index: r for r in routes}
+    required = {r.page_index for r in routes if r.table_required}
+    inventory = build_inventory(usable, required, settings)
+    request = replace(
+        request,
+        evidence=request.evidence
+        + "\nIndependent rows: "
+        + json.dumps(
+            [
+                {
+                    "table": r.table_name,
+                    "row_index": r.row_index,
+                    "page_index": r.page_index,
+                    "bbox": r.bbox.model_dump(),
+                }
+                for r in inventory.rows
+            ]
+        )
+        + "\nUse global row indices. Name every unprovided row in unresolved_rows; "
+        + "never shorten stated counts.",
+    )
+    vision_pages = {
+        p.page_index for p in usable if ReaderKind.VISION in route_map[p.page_index].readers
+    }
+    if any(r.page_index not in vision_pages for r in inventory.rows if r.page_index in required):
+        return outcome(
+            "extraction_failed", errors=("table_native_reader_unavailable", *unreadable_errors)
+        )
+    crop_inventory = replace(
+        inventory, rows=tuple(r for r in inventory.rows if r.page_index in vision_pages)
+    )
+    try:
+        crops = native_crops(usable, crop_inventory, settings)
+    except ValueError as exc:
+        return outcome(
+            "extraction_failed",
+            errors=(str(exc), *unreadable_errors),
+            routes=routes,
+            inventory=inventory,
+        )
     candidates: list[FieldCandidate] = []
     documents: list[DocumentEnvelope] = []
-    for reader in readers if readers is not None else (TextLayerReader(), VisionReader()):
-        evidence_pages = {
-            page.page_index
-            for page in usable
-            if (
-                (page.image is not None and page.vision_ready)
-                if reader.name.value == "vision"
-                else bool(page.characters)
+    for reader in configured:
+        if isinstance(reader, PaddleReader) and paddle is not None:
+            reader = paddle
+        eligible = tuple(
+            p
+            for p in usable
+            if reader.name in route_map[p.page_index].readers
+            and not (
+                reader.name == ReaderKind.PADDLE
+                and p.features
+                and any(
+                    v is True
+                    for v in (
+                        p.features.photograph,
+                        p.features.skew,
+                        p.features.stamps,
+                        p.features.handwriting,
+                    )
+                )
             )
-        }
+        )
+        if not eligible:
+            continue
+        evidence_pages = (
+            {
+                p.page_index
+                for p in eligible
+                if (p.image is not None and p.vision_ready)
+                if reader.name == ReaderKind.VISION
+            }
+            if reader.name == ReaderKind.VISION
+            else {
+                p.page_index
+                for p in eligible
+                if (
+                    bool(p.ocr and p.ocr.spans)
+                    if reader.name == ReaderKind.PADDLE
+                    else bool(p.characters)
+                )
+            }
+        )
+        if isinstance(reader, VisionReader):
+            reader = VisionReader(
+                crops=tuple(c for c in crops if c.row.page_index in evidence_pages),
+                settings=settings,
+            )
         current = request
         for attempt in range(max_repairs + 1):
             result = None
             try:
-                result = reader.read(provider, current, usable)
+                result = reader.read(provider, current, eligible)
                 if result is None:
                     break
                 raw = (
@@ -176,7 +319,7 @@ def extract(
                     if isinstance(result.raw_json, str)
                     else result.raw_json
                 )
-                doc = spec.model.model_validate(raw)
+                doc = partial_model(document_type).model_validate(raw)
                 if doc.source != source or doc.segment_id != segment_id:
                     raise ExtractionGuard("source_identity_mismatch", "source")
                 if any(
@@ -206,6 +349,13 @@ def extract(
                         page_map[field.provenance.page_index], field.value, field.provenance.bbox
                     ):
                         raise ExtractionGuard("value_span_geometry_mismatch", path)
+                if reader.name == ReaderKind.PADDLE:
+                    for path, field in {**doc.fields, **doc.extension}.items():
+                        p = page_map[field.provenance.page_index]
+                        if not verify_ocr_box(
+                            p, field.raw_text or field.value, field.provenance.bbox
+                        ) or not verify_ocr_box(p, field.value, field.provenance.bbox):
+                            raise ExtractionGuard("ocr_span_geometry_mismatch", path)
                 documents.append(doc)
                 candidates.extend(
                     FieldCandidate(
@@ -222,7 +372,7 @@ def extract(
                 )
                 break
             except ProviderError as exc:
-                return ExtractionOutcome(
+                return outcome(
                     "extraction_failed",
                     candidates=tuple(candidates),
                     errors=(exc.code, *unreadable_errors),
@@ -276,7 +426,7 @@ def extract(
                         else "$:invalid_provider_document",
                     )
                 if attempt == max_repairs:
-                    return ExtractionOutcome(
+                    return outcome(
                         "extraction_failed",
                         candidates=tuple(candidates),
                         errors=(*errors, *unreadable_errors),
@@ -293,25 +443,154 @@ def extract(
                     ),
                 )
     if not documents:
-        return ExtractionOutcome(
+        return outcome(
             "unreadable" if unreadable_errors else "extraction_failed",
             errors=("no_reader_evidence", *unreadable_errors),
         )
     if unreadable_errors:
-        return ExtractionOutcome(
-            "unreadable", candidates=tuple(candidates), errors=unreadable_errors
+        return outcome("unreadable", candidates=tuple(candidates), errors=unreadable_errors)
+
+    def prefer_primary(choices: tuple[FieldCandidate, ...]) -> FieldCandidate:
+        primary = tuple(
+            c for c in choices if c.reader == route_map[c.field.provenance.page_index].primary
         )
-    merged = merge_candidates(candidates, select=select)
-    # Table metadata is evidence too. Conflicting completeness claims must not be hidden.
-    tables = documents[0].tables
-    if any(doc.tables != tables for doc in documents[1:]):
-        return ExtractionOutcome(
+        return stable_selection(primary or choices)
+
+    merged = merge_candidates(
+        candidates, select=prefer_primary if select is stable_selection else select
+    )
+    # Combine complementary eligible subsets before segment-wide reconciliation.
+    tables = {}
+    for doc in documents:
+        for name, meta in doc.tables.items():
+            if name not in tables:
+                tables[name] = meta
+            elif tables[name] != meta:
+                existing = tables[name]
+                if (
+                    existing.row_count_stated != meta.row_count_stated
+                    or existing.columns != meta.columns
+                ):
+                    return outcome(
+                        "extraction_failed",
+                        candidates=tuple(candidates),
+                        errors=("table_metadata_disagreement",),
+                    )
+                tables[name] = existing.model_copy(
+                    update={
+                        "row_count_stated": max(existing.row_count_stated, meta.row_count_stated),
+                        "unresolved_rows": sorted(
+                            set(existing.unresolved_rows) & set(meta.unresolved_rows)
+                        ),
+                    }
+                )
+    # Returned tables on digital pages require independent structure too.
+    table_pages = {
+        f.provenance.page_index for path, f in merged.items() if re.match(r"[a-z_]+\[", path)
+    }
+    newly_required = table_pages - required
+    if tables and not table_pages:
+        newly_required |= set(page_map)
+    for index in newly_required:
+        p = page_map[index]
+        if p.ocr is None and paddle is not None:
+            late_evidence = paddle.inspect(p)
+            page_map[index] = replace(p, ocr=late_evidence)
+            diagnostics.extend(f"page:{index}:{d}" for d in late_evidence.diagnostics)
+    # Establish semantic correspondence from validated provider row citations that
+    # actually intersect physical rows. Never concatenate anonymous grids by order.
+    associated = False
+    for index, page in list(page_map.items()):
+        if page.ocr is None:
+            continue
+        regions = []
+        for region in page.ocr.tables:
+            names = {
+                match.group(1)
+                for path, field in merged.items()
+                if (match := re.match(r"([a-z_]+)\[", path))
+                and match.group(1) in tables
+                and field.provenance.page_index == index
+                and any(
+                    contains(row.bbox, field.provenance.bbox)
+                    for row in region.rows
+                    if not row.header
+                )
+            }
+            if region.table_name is None and len(names) == 1:
+                region = replace(region, table_name=next(iter(names)))
+                associated = True
+            regions.append(region)
+        if tuple(regions) != page.ocr.tables:
+            page_map[index] = replace(
+                page,
+                ocr=replace(page.ocr, tables=tuple(regions)),
+                features=replace(page.features or PageFeatures(), dense_table=True),
+            )
+    late_named = (
+        any(p.ocr and p.ocr.tables for i, p in page_map.items() if i in newly_required)
+        and not crops
+    )
+    if associated or (late_named and _structure_pass == 0):
+        if _structure_pass >= 1:
+            return outcome(
+                "extraction_failed", errors=("table_correspondence_unstable", *unreadable_errors)
+            )
+        # Re-dispatch with established global row identity and native crops. The
+        # cached evidence has names now, so this bounded second pass cannot repeat.
+        rerun_pages = tuple(
+            replace(
+                page_map.get(p.page_index, p),
+                features=replace(
+                    page_map.get(p.page_index, p).features or PageFeatures(), dense_table=True
+                ),
+            )
+            if p.page_index in newly_required
+            else page_map.get(p.page_index, p)
+            for p in pages
+        )
+        return extract(
+            provider,
+            document_type=document_type,
+            source=source,
+            pages=rerun_pages,
+            segment_id=segment_id,
+            readers=configured,
+            max_repairs=max_repairs,
+            select=select,
+            settings=settings,
+            _structure_pass=_structure_pass + 1,
+        )
+    if newly_required:
+        inventory = build_inventory(tuple(page_map.values()), required | newly_required, settings)
+        # Such rows have not been read at native resolution in this request.
+        if inventory.rows and not crops:
+            diagnostics.append("table_native_crops_required")
+    coverage = (
+        reconcile(inventory, merged, tables)
+        if tables or inventory.rows or required
+        else inventory.diagnostics
+    )
+    if coverage or "table_native_crops_required" in diagnostics:
+        return outcome(
             "extraction_failed",
             candidates=tuple(candidates),
-            errors=("table_metadata_disagreement",),
+            errors=(*coverage, *diagnostics, *unreadable_errors),
+            routes=routes,
+            inventory=inventory,
         )
+    for name, meta in tables.items():
+        count = len(
+            {
+                int(m.group(1))
+                for path in merged
+                if (m := re.match(re.escape(name) + r"\[(\d+)\]", path))
+            }
+        )
+        tables[name] = meta.model_copy(update={"row_count_extracted": count})
     payload = documents[0].model_dump()
     payload.update(
+        tables=tables,
         status=DocumentStatus.EXTRACTED,
         created_at=None,
         extracted_at=None,
@@ -321,7 +600,14 @@ def extract(
     try:
         document = spec.model.model_validate(payload)
     except ValidationError:
-        return ExtractionOutcome(
+        return outcome(
             "extraction_failed", candidates=tuple(candidates), errors=("merged_schema_invalid",)
         )
-    return ExtractionOutcome("extracted", document=document, candidates=tuple(candidates))
+    return outcome(
+        "extracted",
+        document=document,
+        candidates=tuple(candidates),
+        errors=tuple(diagnostics),
+        routes=routes,
+        inventory=inventory,
+    )

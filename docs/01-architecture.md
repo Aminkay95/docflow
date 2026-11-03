@@ -224,7 +224,7 @@ Three readers sit behind one interface:
 
 The per-page routing policy chooses which readers run:
 
-- **Digital, clean text layer** → text layer + vision; PaddleOCR only for tables.
+- **Digital, clean text layer** → text layer alone; structural OCR and native vision crops for tables.
 - **Clean flat scan** → PaddleOCR + vision; compare.
 - **Photographed, skewed or stamped** → vision primary, PaddleOCR secondary; dense regions as
   native-resolution crops.
@@ -489,3 +489,48 @@ unresolved-skew refusal. Supplied homographies must be finite, nonsingular, mutu
 free of an image-crossing projective horizon, and conditioned dimensions must match image metadata
 before direct vision dispatch or repair. Mixed-segment exits retain page refusal reasons alongside
 provider or validation diagnostics, including no-evidence outcomes.
+
+
+## Story 6 implementation: routing and independent tables
+
+`services.extraction.extract` remains a reusable service; worker lifecycle activation is story 8.
+`PageFeatures` carries caller-owned positive evidence. Good aligned text plus an explicit absence
+of dense tables selects text alone. Explicit clean flat scans select OCR and vision. Photographs,
+skew, stamps, handwriting and unknown visual evidence select vision as primary; marked pages use
+OCR only for supporting structure. Unreadable pages reach no reader. Route reasons, configured
+reader availability and effective version/thresholds accompany every service outcome. Defaults are
+provisional pending story 7. A missing feature is unknown, never evidence of an unmarked scan.
+
+`PaddleReader` lazily initializes a process-cached, serialized CPU PPStructureV3 engine. It returns
+validated OCR spans separately from table-structure status, preserving usable scalar evidence when
+structure fails. Cached evidence must match page/version and budgets. Pixels, spans, regions, rows,
+cells and HTML bytes are bounded; malformed geometry and every nonfinite polygon vertex are
+rejected. OCR confidence remains diagnostic. Every emitted Paddle field must match an observed
+text span and its exact normalized conditioned-page rectangle; all semantic reasoning stays behind
+the provider adapter and schema/repair loop. Explicit reader lists never initialize excluded OCR.
+
+Explicit `thead`/`th` header rows are excluded from data inventory. Merged cells, overlapping grids,
+ambiguous rows and unknown semantic correspondence prevent unsupported completeness. Semantic
+correspondence can be established from validated provider row citations contained in physical rows;
+a bounded second pass then uses the resulting global row inventory and native crops. Anonymous or
+unrelated grids are not silently concatenated. Unlabelled headers cannot be guessed as certain.
+Complementary readers are combined before segment-wide count/geometry reconciliation. Every
+independent row must be emitted or named in `unresolved_rows`; shorter provider counts fail. An
+explicit unresolved row remains visible in TableMeta and does not mean complete extraction.
+
+`services.tables.native_crops` decodes each page once, uses outward integer pixel edges and never
+upscales. Crop-local boxes map by offset and scale to normalized conditioned-page boxes; the saved
+conditioning inverse maps landmarks to source pixels. Vision batches attach one original page for
+scalar/header context plus bounded row crops. Each batch carries image positions, crop rectangles,
+page size and global row indices only for attached images. Table citations must cite those rows.
+Every batch envelope is schema/identity validated before merge; conflicting fields/counts fail.
+Whole-page images are never the only evidence used to accept dense row extraction. Crop/pixel and
+provider batch limits return explicit failures. No model calls occur in preparation/conditioning.
+
+Worker dependencies pin `paddleocr[doc-parser]==3.3.2` and `paddlepaddle==3.2.2`; the API installs
+neither. The worker supplies libgomp/OpenGL/GLib runtime libraries and writable model cache paths
+under `/home/appuser/.paddlex` and `.paddleocr`. Provision model weights using the worker user and
+persist these caches, or allow approved first-use downloads. Import-only verification is distinct
+from model initialization and inference accuracy; injected backend tests do not establish either.
+The adapter follows the official PPStructureV3 `overall_ocr_res` and `table_res_list` contract:
+https://www.paddleocr.ai/main/en/version3.x/pipeline_usage/PP-StructureV3.html .

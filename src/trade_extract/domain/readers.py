@@ -26,6 +26,8 @@ class PageInput:
     conditioning_status: str = "pending"
     unreadable_reasons: tuple[str, ...] = ()
     transform: CoordinateTransform | None = None
+    features: PageFeatures | None = None
+    ocr: OCREvidence | None = None
 
     @property
     def vision_ready(self) -> bool:
@@ -60,3 +62,92 @@ class FieldCandidate:
     @property
     def reader(self) -> ReaderKind:
         return self.field.provenance.reader
+
+
+@dataclass(frozen=True)
+class PageFeatures:
+    good_text: bool | None = None
+    flat_scan: bool | None = None
+    photograph: bool | None = None
+    skew: bool | None = None
+    stamps: bool | None = None
+    handwriting: bool | None = None
+    dense_table: bool | None = None
+
+
+@dataclass(frozen=True)
+class OCRSpan:
+    text: str
+    bbox: BBox
+    confidence: float | None = None
+
+
+@dataclass(frozen=True)
+class TableRow:
+    bbox: BBox
+    cells: tuple[BBox, ...] = ()
+    header: bool = False
+
+
+@dataclass(frozen=True)
+class TableRegion:
+    region_id: str
+    bbox: BBox
+    rows: tuple[TableRow, ...]
+    table_name: str | None = None
+    diagnostics: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True)
+class OCREvidence:
+    page_index: int
+    status: str
+    spans: tuple[OCRSpan, ...] = ()
+    tables: tuple[TableRegion, ...] = ()
+    diagnostics: tuple[str, ...] = ()
+    version: str = "paddle-structure-v1"
+    structure_status: str = "ok"
+
+
+@dataclass(frozen=True)
+class PageRoute:
+    page_index: int
+    readers: tuple[ReaderKind, ...]
+    primary: ReaderKind | None
+    reasons: tuple[str, ...]
+    table_required: bool
+    policy: tuple[tuple[str, str | int | float | bool], ...]
+    availability: tuple[tuple[str, bool], ...]
+
+
+@dataclass(frozen=True)
+class InventoryRow:
+    table_name: str
+    row_index: int
+    page_index: int
+    region_id: str
+    bbox: BBox
+
+
+@dataclass(frozen=True)
+class TableInventory:
+    rows: tuple[InventoryRow, ...] = ()
+    diagnostics: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True)
+class NativeCrop:
+    image: PageImage
+    rectangle: tuple[int, int, int, int]
+    page_size: tuple[int, int]
+    row: InventoryRow
+
+    def page_box(self, bbox: BBox) -> BBox:
+        x, y, right, bottom = self.rectangle
+        width, height = self.page_size
+        return BBox(
+            x0=(x + bbox.x0 * (right - x)) / width,
+            y0=(y + bbox.y0 * (bottom - y)) / height,
+            x1=(x + bbox.x1 * (right - x)) / width,
+            y1=(y + bbox.y1 * (bottom - y)) / height,
+        )

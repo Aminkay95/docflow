@@ -41,7 +41,8 @@ conditioning = ["numpy>=1.26", "opencv-python-headless>=4.9"]
 ocr = [
     "numpy>=1.26",
     "opencv-python-headless>=4.9",
-    "paddleocr>=2.7",
+    "paddleocr[doc-parser]==3.3.2",
+    "paddlepaddle==3.2.2",
 ]
 
 [tool.hatch.build.targets.wheel]
@@ -87,5 +88,5 @@ check_untyped_defs = true
 show_error_codes = true
 
 [[tool.mypy.overrides]]
-module = ["pypdfium2.*", "boto3.*", "botocore.*"]
+module = ["pypdfium2.*", "boto3.*", "botocore.*", "paddleocr.*"]
 ignore_missing_imports = true

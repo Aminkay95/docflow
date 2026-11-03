@@ -71,3 +71,6 @@ class ExtractionOutcome:
     document: Any = None
     candidates: tuple[Any, ...] = ()
     errors: tuple[str, ...] = field(default_factory=tuple)
+    routes: tuple[Any, ...] = ()
+    inventory: Any = None
+    diagnostics: tuple[str, ...] = ()
