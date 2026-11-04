@@ -25,6 +25,10 @@ def test_provider_budget_and_paddlex_cache_are_worker_only():
             "PROVIDER": "deepseek",
             "DEEPSEEK_API_KEY": "compose-contract-key",
             "PROVIDER_MAX_OUTPUT_TOKENS": "2048",
+            "OCR_DETECTION_MODEL": "compose-det",
+            "OCR_RECOGNITION_MODEL": "compose-rec",
+            "TABLE_WIRED_STRUCTURE_MODEL": "compose-wired",
+            "TABLE_WIRELESS_STRUCTURE_MODEL": "compose-wireless",
         }
     )
     result = subprocess.run(
@@ -40,6 +44,10 @@ def test_provider_budget_and_paddlex_cache_are_worker_only():
 
     assert services["worker"]["environment"]["PROVIDER_MAX_OUTPUT_TOKENS"] == "2048"
     assert services["worker"]["environment"]["DEEPSEEK_API_KEY"] == "compose-contract-key"
+    assert services["worker"]["environment"]["OCR_DETECTION_MODEL"] == "compose-det"
+    assert services["worker"]["environment"]["OCR_RECOGNITION_MODEL"] == "compose-rec"
+    assert services["worker"]["environment"]["TABLE_WIRED_STRUCTURE_MODEL"] == "compose-wired"
+    assert services["worker"]["environment"]["TABLE_WIRELESS_STRUCTURE_MODEL"] == "compose-wireless"
     for service_name in ("api", "maintenance", "migrate"):
         assert PROVIDER_ENVIRONMENT.isdisjoint(services[service_name]["environment"])
 

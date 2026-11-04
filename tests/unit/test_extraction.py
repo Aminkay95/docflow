@@ -9,7 +9,7 @@ from trade_extract.domain.fields import Agreement, Field
 from trade_extract.domain.hashing import document_hash
 from trade_extract.domain.inference import PageImage, ProviderResult
 from trade_extract.domain.provenance import BBox, CoordinateSpace, Provenance, ReaderKind
-from trade_extract.domain.readers import FieldCandidate, PageInput
+from trade_extract.domain.readers import FieldCandidate, PageFeatures, PageInput
 from trade_extract.providers.mock import MockProvider
 from trade_extract.schemas.base import EnvelopeSource
 from trade_extract.schemas.registry import get_schema
@@ -82,7 +82,7 @@ def fixture(tmp_path: Path):
     return source, page, payload
 
 
-def test_both_readers_extract_valid_invoice(tmp_path):
+def test_sufficient_boxed_digital_text_skips_image_readers(tmp_path):
     source, page, payload = fixture(tmp_path)
     provider = MockProvider(
         {
@@ -94,14 +94,11 @@ def test_both_readers_extract_valid_invoice(tmp_path):
     )
     result = extract(provider, document_type="commercial_invoice", source=source, pages=(page,))
     assert result.status == "extracted", result.errors
-    assert len(result.candidates) == 18
-    assert {candidate.field.provenance.model for candidate in result.candidates} == {
-        "mock-text",
-        "mock-vision",
-    }
-    assert all(f.agreement == Agreement.UNANIMOUS for f in result.document.fields.values())
+    assert len(result.candidates) == 9
+    assert {candidate.field.provenance.model for candidate in result.candidates} == {"mock-text"}
+    assert all(f.agreement == Agreement.SINGLE_READER for f in result.document.fields.values())
     assert not provider.requests[0].pages
-    assert provider.requests[1].pages
+    assert len(provider.requests) == 1
 
 
 def test_bounded_repair_preserves_original_evidence(tmp_path):
@@ -193,7 +190,12 @@ def test_missing_text_only_calls_vision_and_keeps_disagreement(tmp_path):
             ]
         }
     )
-    result = extract(provider, document_type="commercial_invoice", source=source, pages=(page,))
+    result = extract(
+        provider,
+        document_type="commercial_invoice",
+        source=source,
+        pages=(replace(page, features=PageFeatures(photograph=True)),),
+    )
     field = result.document.fields["invoice.number"]
     assert field.agreement == Agreement.DISPUTED
     assert {field.value, field.alternatives[0].value} == {"INV-001", "INV-002"}

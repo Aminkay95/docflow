@@ -31,8 +31,9 @@ def route_page(page: PageInput, settings: Settings, available: set[ReaderKind]) 
     if page.is_unreadable:
         reasons.extend(page.unreadable_reasons or ("unreadable",))
     elif (
-        f.good_text is True
-        and f.dense_table is False
+        len(page.characters) >= settings.routing_min_text_characters
+        and f.dense_table is not True
+        and ReaderKind.TEXT_LAYER in available
         and len(page.text.strip()) >= settings.routing_min_text_characters
         and not any(x is True for x in (f.photograph, f.skew, f.stamps, f.handwriting))
     ):

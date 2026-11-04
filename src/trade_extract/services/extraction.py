@@ -187,7 +187,10 @@ def extract(
     route_map = {r.page_index: r for r in routes}
     paddle = next((r for r in configured if isinstance(r, PaddleReader)), None)
     if paddle is not None:
-        paddle = PaddleReader(settings, backend=paddle.backend)
+        paddle = PaddleReader(
+            settings, backend=paddle.backend, raw_ocr_cache=paddle.raw_ocr_cache
+        )
+        configured = tuple(paddle if isinstance(r, PaddleReader) else r for r in configured)
     prepared = []
     for p in usable:
         if p.ocr is not None:
@@ -198,7 +201,7 @@ def extract(
                     "extraction_failed", errors=("ocr_cached_evidence_invalid", *unreadable_errors)
                 )
         if paddle is not None and ReaderKind.PADDLE in route_map[p.page_index].readers:
-            evidence = paddle.inspect(p)
+            evidence = paddle.inspect(p, require_structure=route_map[p.page_index].table_required)
             p = replace(p, ocr=evidence)
             diagnostics.extend(f"page:{p.page_index}:{d}" for d in evidence.diagnostics)
         if p.ocr is not None and (
@@ -493,8 +496,8 @@ def extract(
         newly_required |= set(page_map)
     for index in newly_required:
         p = page_map[index]
-        if p.ocr is None and paddle is not None:
-            late_evidence = paddle.inspect(p)
+        if paddle is not None and (p.ocr is None or p.ocr.structure_status == "unavailable"):
+            late_evidence = paddle.inspect(p, require_structure=True)
             page_map[index] = replace(p, ocr=late_evidence)
             diagnostics.extend(f"page:{index}:{d}" for d in late_evidence.diagnostics)
     # Establish semantic correspondence from validated provider row citations that

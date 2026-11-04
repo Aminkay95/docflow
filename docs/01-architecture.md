@@ -501,7 +501,10 @@ OCR only for supporting structure. Unreadable pages reach no reader. Route reaso
 reader availability and effective version/thresholds accompany every service outcome. Defaults are
 provisional pending story 7. A missing feature is unknown, never evidence of an unmarked scan.
 
-`PaddleReader` lazily initializes a process-cached, serialized CPU PPStructureV3 engine. It returns
+`PaddleReader` lazily initializes process-cached, serialized CPU stages. Ordinary scans use
+`PaddleOCR` with `PP-OCRv5_mobile_det` and `PP-OCRv5_mobile_rec`; table pages separately and lazily
+initialize `TableRecognitionPipelineV2`. The table call disables layout detection and duplicate OCR
+and receives the validated overall OCR result from the base stage. It returns
 validated OCR spans separately from table-structure status, preserving usable scalar evidence when
 structure fails. Cached evidence must match page/version and budgets. Pixels, spans, regions, rows,
 cells and HTML bytes are bounded; malformed geometry and every nonfinite polygon vertex are

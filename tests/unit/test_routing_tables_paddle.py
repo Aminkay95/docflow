@@ -206,30 +206,148 @@ def test_ocr_failures_hide_exception_content_and_enforce_analysis_budgets():
     assert "ocr_cell_budget_exhausted" in e.diagnostics
 
 
-def test_runtime_disables_unused_chart_recognition(monkeypatch):
-    options = {}
+def test_runtime_stages_mobile_ocr_and_lazy_table_recognition(monkeypatch):
+    options = {"ocr_calls": 0, "table_calls": 0}
 
-    class Backend:
+    class OCRBackend:
         def __init__(self, **kwargs):
-            options.update(kwargs)
+            options["ocr"] = kwargs
 
         def predict(self, _):
+            options["ocr_calls"] += 1
+            raw = SimpleNamespace(
+                json={
+                    "res": {
+                        "rec_texts": ["Widget"],
+                        "rec_polys": [[[10, 10], [100, 10], [100, 30], [10, 30]]],
+                        "rec_scores": [0.9],
+                    }
+                }
+            )
+            options["raw"] = raw
+            yield raw
+
+    class TableBackend:
+        def __init__(self, **kwargs):
+            options["table"] = kwargs
+
+        def predict(self, _, **kwargs):
+            options["table_calls"] += 1
+            options["predict"] = kwargs
             yield {
                 "res": {
-                    "overall_ocr_res": {"rec_texts": [], "rec_polys": []},
-                    "table_res_list": [],
+                    "table_res_list": [
+                        {
+                            "pred_html": "<table><tr><td>Widget</td></tr></table>",
+                            "cell_box_list": [[10, 10, 100, 30]],
+                        }
+                    ]
                 }
             }
 
-    monkeypatch.setattr(paddle_module, "_ENGINE", None)
-    monkeypatch.setitem(sys.modules, "paddleocr", SimpleNamespace(PPStructureV3=Backend))
+    monkeypatch.setattr(paddle_module, "_OCR_ENGINE", None)
+    monkeypatch.setattr(paddle_module, "_TABLE_ENGINE", None)
+    monkeypatch.setitem(
+        sys.modules,
+        "paddleocr",
+        SimpleNamespace(PaddleOCR=OCRBackend, TableRecognitionPipelineV2=TableBackend),
+    )
 
-    evidence = PaddleReader().inspect(page())
+    settings = Settings(
+        ocr_detection_model="custom-mobile-det",
+        ocr_recognition_model="custom-mobile-rec",
+        table_wired_structure_model="custom-wired",
+        table_wireless_structure_model="custom-wireless",
+    )
+    reader = PaddleReader(settings)
+    evidence = reader.inspect(page())
+    assert evidence.status == "ok" and evidence.structure_status == "unavailable"
+    assert options["ocr_calls"] == 1 and options["table_calls"] == 0
 
-    assert evidence.status == "ok"
-    assert options["chart_recognition_model_name"] == "PP-LCNet_x1_0_table_cls"
-    assert options["use_chart_recognition"] is False
-    assert options["use_table_recognition"] is True
+    structured = reader.inspect(replace(page(), ocr=evidence), require_structure=True)
+
+    assert structured.structure_status == "ok"
+    assert options["ocr_calls"] == 1 and options["table_calls"] == 1
+    assert options["ocr"]["text_detection_model_name"] == "custom-mobile-det"
+    assert options["ocr"]["text_recognition_model_name"] == "custom-mobile-rec"
+    assert options["table"] == {
+        "device": "cpu",
+        "wired_table_structure_recognition_model_name": "custom-wired",
+        "wireless_table_structure_recognition_model_name": "custom-wireless",
+        "text_detection_model_name": "custom-mobile-det",
+        "text_recognition_model_name": "custom-mobile-rec",
+        "use_doc_orientation_classify": False,
+        "use_doc_unwarping": False,
+        "use_layout_detection": False,
+        "use_ocr_model": False,
+    }
+    assert options["predict"]["use_layout_detection"] is False
+    assert options["predict"]["use_ocr_model"] is False
+    assert options["predict"]["overall_ocr_res"] is options["raw"]
+    assert structured.spans[0].text == "Widget"
+    assert structured.spans[0].bbox == BBox(x0=0.01, y0=0.01, x1=0.1, y1=0.03)
+    assert structured.structure_status == "ok"
+    assert structured.tables[0].rows[0].bbox == structured.tables[0].rows[0].cells[0]
+
+    # Normalized evidence alone is not a valid PaddleX handoff. A new reader
+    # conservatively repeats mobile OCR instead of fabricating OCRResult internals.
+    external = PaddleReader(settings).inspect(replace(page(), ocr=evidence), require_structure=True)
+    assert external.structure_status == "ok"
+    assert options["ocr_calls"] == 2
+
+
+def test_native_table_failure_and_overflow_preserve_base_spans(monkeypatch):
+    raw = SimpleNamespace(
+        json={
+            "res": {
+                "rec_texts": ["kept"],
+                "rec_polys": [[[10, 10], [50, 10], [50, 30], [10, 30]]],
+                "rec_scores": [0.8],
+            }
+        }
+    )
+
+    class OCRBackend:
+        def __init__(self, **_):
+            pass
+
+        def predict(self, _):
+            yield raw
+
+    class FailingTable:
+        def __init__(self, **_):
+            pass
+
+        def predict(self, *_args, **_kwargs):
+            raise RuntimeError("private failure")
+
+    monkeypatch.setattr(paddle_module, "_OCR_ENGINE", None)
+    monkeypatch.setattr(paddle_module, "_TABLE_ENGINE", None)
+    monkeypatch.setitem(
+        sys.modules,
+        "paddleocr",
+        SimpleNamespace(PaddleOCR=OCRBackend, TableRecognitionPipelineV2=FailingTable),
+    )
+    failed = PaddleReader().inspect(page(), require_structure=True)
+    assert failed.status == "ok" and failed.structure_status == "error"
+    assert failed.spans[0].text == "kept"
+    assert failed.diagnostics == ("ocr_initialization_or_inference_failed",)
+
+    class OverflowTable(FailingTable):
+        def predict(self, *_args, **_kwargs):
+            for _ in range(3):
+                yield {"res": {"table_res_list": []}}
+
+    monkeypatch.setattr(paddle_module, "_TABLE_ENGINE", None)
+    monkeypatch.setitem(
+        sys.modules,
+        "paddleocr",
+        SimpleNamespace(PaddleOCR=OCRBackend, TableRecognitionPipelineV2=OverflowTable),
+    )
+    overflow = PaddleReader(Settings(ocr_max_regions=2)).inspect(page(), require_structure=True)
+    assert overflow.status == "ok" and overflow.structure_status == "error"
+    assert overflow.spans[0].text == "kept"
+    assert overflow.diagnostics == ("ocr_region_budget_exhausted",)
 
 
 def test_html_row_headers_and_slight_cell_alignment_are_supported():

@@ -403,6 +403,22 @@ Non-goals:
 
 ## 13. Release checklist
 
+The worker's OCR memory boundary is staged: digital pages with sufficient boxed text initialize no
+Paddle engine, ordinary scans initialize only the configured mobile detection/recognition models,
+and table recognition initializes once per process only on a known or late table requirement. The
+effective `OCR_DETECTION_MODEL`, `OCR_RECOGNITION_MODEL`, `TABLE_WIRED_STRUCTURE_MODEL`,
+`TABLE_WIRELESS_STRUCTURE_MODEL`, and OCR/table
+budgets are recorded in each routing snapshot. CPU inference remains serialized; operators should
+provision model caches before an offline deployment. Import tests do not establish model runtime
+memory, so the QA sample run remains a release check.
+
+The 2026-11-04 provider-free Docker smoke test used the public DHL invoice under a 3.7 GiB
+container limit. Mobile OCR returned 100 spans at about 1.18 GiB peak RSS; the first lazy table pass
+stayed under about 1.42 GiB and refused ambiguous merged-cell structure. With model files cached but
+a fresh process, base initialization plus inference took 68.833 seconds and the first table
+initialization plus inference took 40.701 seconds. Long-lived workers amortize model initialization;
+these cold-process numbers are not per-page steady-state targets.
+
 - [ ] `docs/openapi.yaml` validates and matches the FastAPI schema.
 - [ ] Migrations run from empty and from the previous release.
 - [ ] API image has no OCR imports; worker image has all OCR extras pinned.

@@ -2,12 +2,14 @@
 
 from __future__ import annotations
 
+import hashlib
 import io
 import json
 import math
 import threading
 from dataclasses import replace
 from html.parser import HTMLParser
+from itertools import islice
 from typing import Any
 
 from trade_extract.config import Settings
@@ -17,10 +19,8 @@ from trade_extract.domain.readers import OCREvidence, OCRSpan, PageInput, TableR
 from trade_extract.providers.base import ModelProvider
 
 _LOCK = threading.Lock()
-_ENGINE: Any = None
-# PPStructureV3 eagerly constructs ChartRecognition even when it is disabled. Point that
-# unreachable slot at an already-required lightweight classifier until Paddle honors the flag.
-_DISABLED_CHART_PLACEHOLDER_MODEL = "PP-LCNet_x1_0_table_cls"
+_OCR_ENGINE: Any = None
+_TABLE_ENGINE: Any = None
 
 
 class _Rows(HTMLParser):
@@ -129,12 +129,18 @@ def contains(a: BBox, b: BBox) -> bool:
 class PaddleReader:
     name = ReaderKind.PADDLE
 
-    def __init__(self, settings: Settings | None = None, backend: Any = None):
+    def __init__(
+        self,
+        settings: Settings | None = None,
+        backend: Any = None,
+        raw_ocr_cache: dict[tuple[Any, ...], Any] | None = None,
+    ):
         self.settings = settings or Settings()
         self.backend = backend
+        self.raw_ocr_cache = raw_ocr_cache if raw_ocr_cache is not None else {}
 
-    def inspect(self, page: PageInput) -> OCREvidence:
-        global _ENGINE
+    def inspect(self, page: PageInput, *, require_structure: bool = False) -> OCREvidence:
+        global _OCR_ENGINE, _TABLE_ENGINE
         s = self.settings
         spans: list[OCRSpan] = []
         if page.is_unreadable:
@@ -145,8 +151,11 @@ class PaddleReader:
                 structure_status="unavailable",
             )
         try:
-            if page.ocr is not None:
-                return validate_evidence(page.ocr, page, s)
+            cached = validate_evidence(page.ocr, page, s) if page.ocr is not None else None
+            if cached is not None and not (
+                require_structure and cached.structure_status == "unavailable"
+            ):
+                return cached
             if page.image is None or not page.vision_ready:
                 return OCREvidence(
                     page.page_index,
@@ -162,31 +171,78 @@ class PaddleReader:
                 if im.size != (page.image.width_px, page.image.height_px):
                     raise ValueError("ocr_image_dimensions_mismatch")
                 with _LOCK:
-                    if self.backend is None:
-                        from paddleocr import PPStructureV3
-
-                        if _ENGINE is None:
-                            _ENGINE = PPStructureV3(
-                                device="cpu",
-                                chart_recognition_model_name=_DISABLED_CHART_PLACEHOLDER_MODEL,
-                                use_doc_orientation_classify=False,
-                                use_doc_unwarping=False,
-                                use_textline_orientation=False,
-                                use_formula_recognition=False,
-                                use_seal_recognition=False,
-                                use_table_recognition=True,
-                                use_chart_recognition=False,
-                            )
-                        self.backend = _ENGINE
                     import numpy as np
 
                     array = np.array(im.convert("RGB"))[:, :, ::-1]
-                    if hasattr(self.backend, "predict"):
-                        results = iter(self.backend.predict(array))
-                        first = next(results, None)
-                        if first is None or next(results, None) is not None:
-                            raise ValueError("ocr_invalid_page_results")
-                        raw = normalize_v3(first, s)
+                    if self.backend is None:
+                        from paddleocr import PaddleOCR
+
+                        cache_key = _raw_cache_key(page)
+                        ocr_raw = self.raw_ocr_cache.get(cache_key)
+                        if ocr_raw is None:
+                            if _OCR_ENGINE is None:
+                                _OCR_ENGINE = PaddleOCR(
+                                    device="cpu",
+                                    text_detection_model_name=s.ocr_detection_model,
+                                    text_recognition_model_name=s.ocr_recognition_model,
+                                    use_doc_orientation_classify=False,
+                                    use_doc_unwarping=False,
+                                    use_textline_orientation=False,
+                                )
+                            ocr_raw = _one_result(_OCR_ENGINE.predict(array))
+                            overall = normalize_ocr(ocr_raw, s)
+                            self.raw_ocr_cache[cache_key] = ocr_raw
+                        else:
+                            overall = normalize_ocr(ocr_raw, s)
+                        table_results: list[Any] = []
+                        if require_structure:
+                            from paddleocr import TableRecognitionPipelineV2
+
+                            if _TABLE_ENGINE is None:
+                                _TABLE_ENGINE = TableRecognitionPipelineV2(
+                                    device="cpu",
+                                    wired_table_structure_recognition_model_name=(
+                                        s.table_wired_structure_model
+                                    ),
+                                    wireless_table_structure_recognition_model_name=(
+                                        s.table_wireless_structure_model
+                                    ),
+                                    text_detection_model_name=s.ocr_detection_model,
+                                    text_recognition_model_name=s.ocr_recognition_model,
+                                    use_doc_orientation_classify=False,
+                                    use_doc_unwarping=False,
+                                    use_layout_detection=False,
+                                    use_ocr_model=False,
+                                )
+                            try:
+                                table_results = _bounded_results(
+                                    _TABLE_ENGINE.predict(
+                                        array,
+                                        overall_ocr_res=ocr_raw,
+                                        use_layout_detection=False,
+                                        use_ocr_model=False,
+                                    ),
+                                    s.ocr_max_regions - 1,
+                                )
+                                raw = normalize_staged(overall, table_results, s)
+                            except Exception as exc:
+                                return validate_evidence(
+                                    OCREvidence(
+                                        page.page_index,
+                                        "ok",
+                                        _spans_from_overall(
+                                            overall, page.image.width_px, page.image.height_px
+                                        ),
+                                        diagnostics=(_safe_error(exc),),
+                                        structure_status="error",
+                                    ),
+                                    page,
+                                    s,
+                                )
+                        else:
+                            raw = normalize_staged(overall, table_results, s)
+                    elif hasattr(self.backend, "predict"):
+                        raw = normalize_v3(_one_result(self.backend.predict(array)), s)
                     else:
                         raw = self.backend(array)
             if not isinstance(raw, list) or len(raw) > s.ocr_max_regions:
@@ -277,7 +333,13 @@ class PaddleReader:
                     tuple(spans),
                     tuple(tables),
                     tuple(diagnostics),
-                    structure_status="error" if diagnostics else "ok",
+                    structure_status=(
+                        "error"
+                        if diagnostics
+                        else "ok"
+                        if require_structure or self.backend is not None or tables
+                        else "unavailable"
+                    ),
                 ),
                 page,
                 s,
@@ -399,6 +461,101 @@ def normalize_v3(result: Any, settings: Settings) -> list[dict[str, Any]]:
             }
         )
     return output
+
+
+def _one_result(results: Any) -> Any:
+    values = iter(results)
+    first = next(values, None)
+    if first is None or next(values, None) is not None:
+        raise ValueError("ocr_invalid_page_results")
+    return first
+
+
+def _payload(result: Any) -> Any:
+    payload = result.json if hasattr(result, "json") else result
+    return payload() if callable(payload) else payload
+
+
+def normalize_ocr(result: Any, settings: Settings) -> dict[str, Any]:
+    """Return Paddle's bounded overall OCR result for reuse by the table stage."""
+    payload = _payload(result)
+    if not isinstance(payload, dict):
+        raise ValueError("ocr_malformed_result")
+    data = payload.get("res", payload)
+    if isinstance(data, dict) and isinstance(data.get("overall_ocr_res"), dict):
+        data = data["overall_ocr_res"]
+    if not isinstance(data, dict):
+        raise ValueError("ocr_malformed_result")
+    texts = data.get("rec_texts", [])
+    polys = data.get("rec_polys", data.get("dt_polys", []))
+    scores = data.get("rec_scores", [])
+    if not isinstance(texts, list) or len(texts) > settings.ocr_max_spans:
+        raise ValueError("ocr_span_budget_or_shape")
+    if not isinstance(polys, list) or not isinstance(scores, list):
+        raise ValueError("ocr_span_budget_or_shape")
+    if len(texts) != len(polys) or (scores and len(scores) != len(texts)):
+        raise ValueError("ocr_span_budget_or_shape")
+    return data
+
+
+def normalize_staged(
+    overall_ocr_res: dict[str, Any], table_results: list[Any], settings: Settings
+) -> list[dict[str, Any]]:
+    """Adapt staged pipeline output through the established bounded normalizer."""
+    tables: list[Any] = []
+    for result in table_results:
+        payload = _payload(result)
+        if not isinstance(payload, dict):
+            raise ValueError("ocr_malformed_result")
+        data = payload.get("res", payload)
+        if not isinstance(data, dict):
+            raise ValueError("ocr_malformed_result")
+        current = data.get("table_res_list")
+        if current is None and any(k in data for k in ("pred_html", "cell_box_list")):
+            current = [data]
+        if not isinstance(current, list):
+            raise ValueError("ocr_malformed_result")
+        if len(current) > settings.ocr_max_regions - 1 - len(tables):
+            raise ValueError("ocr_region_budget_exhausted")
+        tables.extend(current)
+    return normalize_v3(
+        {"res": {"overall_ocr_res": overall_ocr_res, "table_res_list": tables}}, settings
+    )
+
+
+def _bounded_results(results: Any, maximum: int) -> list[Any]:
+    bounded = list(islice(iter(results), maximum + 1))
+    if len(bounded) > maximum:
+        raise ValueError("ocr_region_budget_exhausted")
+    return bounded
+
+
+def _spans_from_overall(
+    overall: dict[str, Any], width: int, height: int
+) -> tuple[OCRSpan, ...]:
+    texts = overall.get("rec_texts", [])
+    polygons = overall.get("rec_polys", overall.get("dt_polys", []))
+    scores = overall.get("rec_scores", [])
+    return tuple(
+        OCRSpan(
+            str(text),
+            _box(poly.tolist() if hasattr(poly, "tolist") else poly, width, height),
+            float(scores[index]) if index < len(scores) else None,
+        )
+        for index, (text, poly) in enumerate(zip(texts, polygons, strict=True))
+    )
+
+
+def _raw_cache_key(page: PageInput) -> tuple[Any, ...]:
+    if page.image is None:
+        raise ValueError("ocr_no_conditioned_image")
+    return (
+        page.page_index,
+        page.conditioning_version,
+        page.image.width_px,
+        page.image.height_px,
+        hashlib.sha256(page.image.image_bytes).digest(),
+    )
 
 
 def _cell_union(cells: Any) -> list[float]:
