@@ -52,6 +52,7 @@ class Settings(BaseSettings):
     provider_connect_timeout_seconds: float = Field(default=5, gt=0, le=60)
     provider_max_attempts: int = Field(default=3, ge=1, le=5)
     provider_max_repairs: int = Field(default=2, ge=0, le=2)
+    provider_max_output_tokens: int = Field(default=8_192, ge=1, le=8_192)
     provider_backoff_max_seconds: float = Field(default=30, gt=0, le=60)
     provider_max_images: int = Field(default=20, ge=1, le=100)
     provider_max_image_bytes: int = Field(default=20_000_000, ge=1, le=50_000_000)

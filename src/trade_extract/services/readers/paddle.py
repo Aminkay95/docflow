@@ -18,6 +18,9 @@ from trade_extract.providers.base import ModelProvider
 
 _LOCK = threading.Lock()
 _ENGINE: Any = None
+# PPStructureV3 eagerly constructs ChartRecognition even when it is disabled. Point that
+# unreachable slot at an already-required lightweight classifier until Paddle honors the flag.
+_DISABLED_CHART_PLACEHOLDER_MODEL = "PP-LCNet_x1_0_table_cls"
 
 
 class _Rows(HTMLParser):
@@ -165,11 +168,14 @@ class PaddleReader:
                         if _ENGINE is None:
                             _ENGINE = PPStructureV3(
                                 device="cpu",
+                                chart_recognition_model_name=_DISABLED_CHART_PLACEHOLDER_MODEL,
                                 use_doc_orientation_classify=False,
                                 use_doc_unwarping=False,
                                 use_textline_orientation=False,
                                 use_formula_recognition=False,
                                 use_seal_recognition=False,
+                                use_table_recognition=True,
+                                use_chart_recognition=False,
                             )
                         self.backend = _ENGINE
                     import numpy as np

@@ -61,6 +61,30 @@ def test_connection_retry_then_success_and_json_mode():
     assert provider.text_reason(request()).input_tokens == 12
     assert len(attempts) == 2
     assert b'"response_format":{"type":"json_object"}' in calls[-1].content
+    assert json.loads(calls[-1].content)["max_tokens"] == 8192
+
+
+def test_output_token_budget_is_forwarded_and_capped():
+    calls = []
+
+    def handler(req):
+        calls.append(json.loads(req.content))
+        return httpx.Response(200, json={"choices": [{"message": {"content": "{}"}}]})
+
+    provider = DeepSeekProvider(
+        Settings(
+            provider="deepseek",
+            deepseek_api_key="secret",
+            provider_max_output_tokens=1024,
+        ),
+        client=httpx.Client(transport=httpx.MockTransport(handler)),
+        recorder=lambda attempt: None,
+    )
+    provider.text_reason(request())
+
+    assert calls[0]["max_tokens"] == 1024
+    with pytest.raises(ValidationError):
+        Settings(provider_max_output_tokens=8193)
 
 
 def test_images_rejected_before_http_and_prompt_stability():

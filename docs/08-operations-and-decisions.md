@@ -32,6 +32,7 @@ secrets, database size and storage backend.
 | `DEEPSEEK_API_KEY` | — | Required when provider is `deepseek`. |
 | `DEEPSEEK_VISION_MODEL` | `deepseek-flash` | Only this model may read images. |
 | `DEEPSEEK_TEXT_MODEL` | `deepseek-v4-pro` | Text-only reasoning. |
+| `PROVIDER_MAX_OUTPUT_TOKENS` | `8192` | Maximum output tokens per provider response; 8,192 is also the allowed maximum. Lower values bound cost more tightly but reduce extraction capacity for large documents. |
 | `MAX_DOCUMENTS_PER_GROUP` | `20` | Do not raise without a v2 chunking story. |
 | `MAX_FILE_BYTES` | `26214400` | 25 MiB. |
 | `MAX_PAGES_PER_FILE` | `500` | |

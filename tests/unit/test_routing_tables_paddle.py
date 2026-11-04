@@ -1,7 +1,9 @@
 """Routing, structural parsing and independent crop geometry regression matrix."""
 
 import io
+import sys
 from dataclasses import replace
+from types import SimpleNamespace
 
 import pytest
 from PIL import Image
@@ -18,6 +20,7 @@ from trade_extract.domain.readers import (
     TableRow,
     TextCharacter,
 )
+from trade_extract.services.readers import paddle as paddle_module
 from trade_extract.services.readers.paddle import PaddleReader
 from trade_extract.services.routing import route_page
 from trade_extract.services.tables import build_inventory, native_crops
@@ -201,6 +204,32 @@ def test_ocr_failures_hide_exception_content_and_enforce_analysis_budgets():
     raw[0]["res"]["cell_bbox"] *= 2
     e = PaddleReader(Settings(ocr_max_cells=1), lambda _: raw).inspect(page())
     assert "ocr_cell_budget_exhausted" in e.diagnostics
+
+
+def test_runtime_disables_unused_chart_recognition(monkeypatch):
+    options = {}
+
+    class Backend:
+        def __init__(self, **kwargs):
+            options.update(kwargs)
+
+        def predict(self, _):
+            yield {
+                "res": {
+                    "overall_ocr_res": {"rec_texts": [], "rec_polys": []},
+                    "table_res_list": [],
+                }
+            }
+
+    monkeypatch.setattr(paddle_module, "_ENGINE", None)
+    monkeypatch.setitem(sys.modules, "paddleocr", SimpleNamespace(PPStructureV3=Backend))
+
+    evidence = PaddleReader().inspect(page())
+
+    assert evidence.status == "ok"
+    assert options["chart_recognition_model_name"] == "PP-LCNet_x1_0_table_cls"
+    assert options["use_chart_recognition"] is False
+    assert options["use_table_recognition"] is True
 
 
 def test_html_row_headers_and_slight_cell_alignment_are_supported():

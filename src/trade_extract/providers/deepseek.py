@@ -110,6 +110,7 @@ class DeepSeekProvider:
             )
         body = {
             "model": model,
+            "max_tokens": self.settings.provider_max_output_tokens,
             "response_format": {"type": "json_object"},
             "messages": [
                 {"role": "system", "content": prompt_for(request)},

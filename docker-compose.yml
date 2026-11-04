@@ -81,9 +81,17 @@ services:
       context: .
       dockerfile: Dockerfile.worker
     command: ["python", "-m", "trade_extract.workers"]
-    environment: *app-env
+    environment:
+      <<: *app-env
+      PROVIDER: ${PROVIDER:-mock}
+      DEEPSEEK_API_KEY: ${DEEPSEEK_API_KEY:-}
+      DEEPSEEK_BASE_URL: ${DEEPSEEK_BASE_URL:-https://api.deepseek.com}
+      DEEPSEEK_VISION_MODEL: ${DEEPSEEK_VISION_MODEL:-deepseek-flash}
+      DEEPSEEK_TEXT_MODEL: ${DEEPSEEK_TEXT_MODEL:-deepseek-v4-pro}
+      PROVIDER_MAX_OUTPUT_TOKENS: ${PROVIDER_MAX_OUTPUT_TOKENS:-8192}
     volumes:
       - storage:/app/var/storage
+      - paddlex_cache:/home/appuser/.paddlex
     depends_on:
       postgres:
         condition: service_healthy
@@ -112,3 +120,4 @@ services:
 volumes:
   pgdata:
   storage:
+  paddlex_cache:
