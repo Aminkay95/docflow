@@ -1,0 +1,40 @@
+{% extends "base.html" %}
+{% from "partials/icon.html" import icon %}
+{% block content %}
+<section class="card">
+  <header class="card-header">
+    <div><h2 class="card-title">Clients</h2><p class="card-subtitle">Tenants with API credentials for document submission.</p></div>
+    <span class="badge badge-neutral">{{ rows | length }} client{{ '' if rows | length == 1 else 's' }}</span>
+  </header>
+  {% if rows %}
+  <div class="table-wrap">
+    <table class="table">
+      <thead><tr><th scope="col">Client</th><th scope="col">Status</th><th scope="col" class="num">Jobs</th><th scope="col">Webhook</th><th scope="col">Created</th><th scope="col" class="actions-col"><span class="sr-only">Actions</span></th></tr></thead>
+      <tbody>
+      {% for client, job_count in rows %}
+        <tr>
+          <td>
+            <span class="client-cell">
+              <span class="client-icon" aria-hidden="true">{{ icon('building-2', 16) }}</span>
+              <span><strong>{{ client.name }}</strong><small class="mono block text-muted">{{ client.slug }}</small></span>
+            </span>
+          </td>
+          <td><span class="badge badge-{{ client.status | badge }}">{{ client.status | humanize }}</span></td>
+          <td class="num tabular">{{ job_count }}</td>
+          <td><span class="{{ 'text-muted' if not client.webhook_enabled else '' }}">{{ 'Enabled' if client.webhook_enabled else 'Disabled' }}</span></td>
+          <td class="text-muted nowrap">{{ client.created_at | when }}</td>
+          <td class="actions-col"><a class="btn btn-secondary btn-sm" href="/review/jobs?client={{ client.id }}">View jobs</a></td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <div class="empty">
+    <span class="empty-icon">{{ icon('building-2', 20) }}</span>
+    <p class="empty-title">No clients</p>
+    <p class="empty-copy">Create a client with the CLI to start accepting submissions.</p>
+  </div>
+  {% endif %}
+</section>
+{% endblock %}

@@ -108,7 +108,7 @@ def test_bounded_repair_preserves_original_evidence(tmp_path):
     )
     result = extract(provider, document_type="commercial_invoice", source=source, pages=(page,))
     assert result.status == "extraction_failed" and result.document is None
-    assert len(provider.requests) == 3
+    assert len(provider.requests) == 2
     assert provider.requests[1].evidence == provider.requests[0].evidence
     assert provider.requests[1].repair_errors
     repaired = MockProvider(
@@ -220,7 +220,7 @@ def test_forged_text_box_and_truncated_table_trigger_repair(tmp_path):
         )
         result = extract(provider, document_type="commercial_invoice", source=source, pages=(page,))
         assert result.status == "extraction_failed"
-        assert len(provider.requests) == 3
+        assert len(provider.requests) == 2
 
 
 def test_repairs_keep_paths_and_guard_codes_without_values(tmp_path):

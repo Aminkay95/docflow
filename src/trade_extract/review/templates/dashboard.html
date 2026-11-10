@@ -1,0 +1,122 @@
+{% extends "base.html" %}
+{% from "partials/icon.html" import icon %}
+{% block actions %}
+<a class="btn btn-secondary btn-sm" href="/review/jobs"><span>All jobs</span>{{ icon('arrow-right', 14) }}</a>
+{% endblock %}
+{% block content %}
+<section class="metric-grid" aria-label="Workspace totals">
+  <a class="metric-card" href="/review/queues/extraction">
+    <span class="metric-label">Extraction reviews</span>
+    <span class="metric-value"><span class="count">{{ counts.get('extraction', 0) }}</span></span>
+  </a>
+  <a class="metric-card" href="/review/queues/conflicts">
+    <span class="metric-label">Conflict reviews</span>
+    <span class="metric-value"><span class="count">{{ counts.get('conflict', 0) }}</span></span>
+  </a>
+  <a class="metric-card" href="/review/jobs">
+    <span class="metric-label">Active jobs</span>
+    <span class="metric-value"><span class="metric-number">{{ totals.active_jobs }}</span></span>
+  </a>
+  <a class="metric-card" href="/review/activity">
+    <span class="metric-label">Documents processed</span>
+    <span class="metric-value"><span class="metric-number">{{ totals.documents }}</span></span>
+  </a>
+</section>
+
+<div class="dashboard-grid">
+  <section class="card">
+    <header class="card-header">
+      <div>
+        <h2 class="card-title">Recent jobs</h2>
+        <p class="card-subtitle">Latest submissions and their review load.</p>
+      </div>
+      <a class="btn btn-ghost btn-sm" href="/review/jobs">View all</a>
+    </header>
+    {% if recent_jobs %}
+    <div class="table-wrap">
+      <table class="table">
+        <thead><tr><th scope="col">Job</th><th scope="col">Client</th><th scope="col">Status</th><th scope="col">Updated</th></tr></thead>
+        <tbody>
+        {% for job, client_name in recent_jobs %}
+          <tr>
+            <td><a class="table-link" href="/review/jobs/{{ job.id }}">{{ job.job_ref or job.id }}</a></td>
+            <td class="text-muted">{{ client_name }}</td>
+            <td><span class="badge badge-{{ job.status | badge }}">{{ job.status | humanize }}</span></td>
+            <td class="text-muted nowrap">{{ job.updated_at | when }}</td>
+          </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% else %}
+    <div class="empty">
+      <span class="empty-icon">{{ icon('inbox', 20) }}</span>
+      <p class="empty-title">No jobs yet</p>
+      <p class="empty-copy">Upload a document to create your first extraction job.</p>
+      {% if not read_only %}<a class="btn btn-primary btn-sm" href="/review/jobs/new">{{ icon('plus', 14) }}<span>Create job</span></a>{% endif %}
+    </div>
+    {% endif %}
+  </section>
+
+  <section class="card">
+    <header class="card-header">
+      <div>
+        <h2 class="card-title">Job status</h2>
+        <p class="card-subtitle">Where every job currently sits.</p>
+      </div>
+    </header>
+    <div class="card-body card-body-tight">
+      {% if status_rows %}
+      <ul class="status-list">
+        {% for state, total in status_rows %}
+        <li class="status-row">
+          <span class="badge badge-{{ state | badge }}">{{ state | humanize }}</span>
+          <span class="status-total">{{ total }}</span>
+        </li>
+        {% endfor %}
+      </ul>
+      {% else %}
+      <p class="text-muted">No job activity recorded yet.</p>
+      {% endif %}
+    </div>
+  </section>
+</div>
+
+<section class="card">
+  <header class="card-header">
+    <div>
+      <h2 class="card-title">Recent activity</h2>
+      <p class="card-subtitle">Decisions recorded by the review team.</p>
+    </div>
+    <a class="btn btn-ghost btn-sm" href="/review/activity">Full activity</a>
+  </header>
+  {% if recent_activity %}
+  <ul class="timeline">
+    {% for label, reviewer_name, item, job_ref in recent_activity %}
+    <li class="timeline-item">
+      <span class="timeline-dot" aria-hidden="true"></span>
+      <div class="timeline-body">
+        <p class="timeline-line">
+          <strong>{{ reviewer_name }}</strong>
+          <span class="text-muted">recorded</span>
+          <span class="badge badge-{{ label.outcome | badge }}">{{ label.outcome | humanize }}</span>
+          {% if label.field_path %}<span class="mono text-muted">{{ label.field_path }}</span>{% endif %}
+        </p>
+        <p class="text-muted">{{ label.reason }}</p>
+      </div>
+      <div class="timeline-meta">
+        <a href="{{ '/review/documents/' ~ item.document_id if item.document_id else '/review/conflicts/' ~ item.conflict_id }}">{{ job_ref or 'View item' }}</a>
+        <small>{{ label.created_at | when }}</small>
+      </div>
+    </li>
+    {% endfor %}
+  </ul>
+  {% else %}
+  <div class="empty">
+    <span class="empty-icon">{{ icon('activity', 20) }}</span>
+    <p class="empty-title">No decisions yet</p>
+    <p class="empty-copy">Resolved review items will be logged here.</p>
+  </div>
+  {% endif %}
+</section>
+{% endblock %}

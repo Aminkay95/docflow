@@ -13,6 +13,7 @@ from trade_extract.db.models.evidence import (
 from trade_extract.db.models.file import File
 from trade_extract.db.models.job import Job
 from trade_extract.db.models.page import Page
+from trade_extract.db.models.password_reset import PasswordReset
 from trade_extract.db.models.policy import Policy
 from trade_extract.db.models.provider_call import ProviderCall
 from trade_extract.db.models.reviewer import Reviewer
@@ -37,6 +38,7 @@ __all__ = [
     "Job",
     "JobTask",
     "Page",
+    "PasswordReset",
     "Policy",
     "ProviderCall",
     "Reviewer",

@@ -184,6 +184,9 @@ def api(
         secret_key="integration-test-secret",
         api_key_pepper="integration-test-pepper",
         storage_dir=tmp_path / "storage",
+        mail_outbox_dir=tmp_path / "outbox",
+        resend_api_key="",
+        smtp_host="",
         base_url="http://testserver",
         webhook_allow_private_targets=True,
     )

@@ -16,5 +16,7 @@ def unit_settings(tmp_path: Path) -> Settings:
         api_key_pepper="unit-test-pepper",
         storage_dir=tmp_path / "storage",
         base_url="http://testserver",
+        resend_api_key="",
+        smtp_host="",
         webhook_allow_private_targets=True,
     )

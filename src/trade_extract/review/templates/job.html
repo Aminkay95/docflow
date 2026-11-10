@@ -1,0 +1,283 @@
+{% extends "base.html" %}
+{% from "partials/review_value.html" import review_value %}
+{% from "partials/icon.html" import icon %}
+{% set hide_page_head = true %}
+{% block topbar_lead %}
+<a class="btn btn-secondary btn-sm topbar-back" href="/review/jobs">{{ icon('arrow-left', 14) }}<span>Back to jobs</span></a>
+{% endblock %}
+{% block content %}
+<section class="job-summary">
+  <div class="job-summary-main">
+    <span class="job-summary-icon" aria-hidden="true">{{ icon('package-check', 20) }}</span>
+    <div class="job-summary-copy">
+      <div class="job-title-row">
+        <h2>{{ job.job_ref or 'Extraction job' }}</h2>
+        <span class="badge badge-{{ job.status | badge }}">{{ job.status | humanize }}</span>
+      </div>
+      <p class="job-summary-meta">
+        <span>{{ client.name if client else 'Unknown client' }}</span>
+        <span class="meta-sep" aria-hidden="true">·</span>
+        <span>{{ open_reviews }} remaining review{{ '' if open_reviews == 1 else 's' }}</span>
+        <span class="meta-sep" aria-hidden="true">·</span>
+        <span>{{ documents | length }} document{{ '' if documents | length == 1 else 's' }}</span>
+      </p>
+    </div>
+  </div>
+  <div class="job-summary-side">
+    {% if not read_only %}
+    <button class="btn btn-primary" type="button" data-finish-job="/review/jobs/{{ job.id }}/done" data-busy-label="Sending…" {% if not ready_to_push %}disabled{% endif %}>
+      {% if ready_to_push %}{{ icon('send', 14) }}{% else %}{{ icon('lock', 14) }}{% endif %}
+      <span>Done / Push result</span>
+    </button>
+    {% endif %}
+    <p class="inline-status" data-finish-status role="status" aria-live="polite"></p>
+  </div>
+</section>
+
+{% if processing %}
+<div class="notice notice-info notice-live" data-autorefresh="4000" role="status">
+  <span class="spinner" aria-hidden="true"></span>
+  <p>Documents are being processed. Updates pause while editing.</p>
+</div>
+{% endif %}
+
+{% set open_conflicts = conflicts | selectattr('0.status', 'equalto', 'open') | list %}
+{% if open_conflicts %}
+<div class="notice notice-warning">
+  {{ icon('triangle-alert', 16) }}
+  <div>
+    <p><strong>Open conflicts need a decision.</strong></p>
+    <p class="notice-links">
+      {% for conflict, source_count in open_conflicts %}<a href="/review/conflicts/{{ conflict.id }}">{{ conflict.field_label }}</a>{% if not loop.last %}<span aria-hidden="true">·</span>{% endif %}{% endfor %}
+    </p>
+  </div>
+</div>
+{% endif %}
+
+{% if selected %}
+<div class="workspace-toolbar">
+  <form method="get" class="document-picker">
+    {% if line_item_table %}<input type="hidden" name="tab" value="{{ active_tab }}">{% endif %}
+    <label class="field">
+      <span class="field-label">Document</span>
+      <div class="select-field select-field-document">
+        {{ icon('file-text', 14, 'select-field-icon') }}
+        <select name="document_id" data-document-picker>
+          {% for row in documents %}<option value="{{ row.id }}" {% if row.id == selected.id %}selected{% endif %}>{{ loop.index }}. {{ row.document_type | humanize }} &middot; {{ row.status | humanize }}</option>{% endfor %}
+        </select>
+      </div>
+    </label>
+    <noscript><button class="btn btn-secondary btn-sm" type="submit">{{ icon('arrow-right', 14) }}<span>View</span></button></noscript>
+  </form>
+  <p class="workspace-tip">{{ icon('circle-dot', 14) }}<span>Select a field to preview its source evidence.</span></p>
+</div>
+
+<div class="workspace job-workspace" data-workspace data-document-id="{{ selected.id }}" data-page-start="{{ selected.page_start }}" data-page-end="{{ selected.page_end }}">
+  <section class="card fields-panel">
+    <header class="card-header">
+      <div>
+        <h2 class="card-title">{{ 'Line items' if active_tab == 'items' else 'Extracted fields' }}</h2>
+        <p class="card-subtitle">{% if active_tab == 'items' %}Click a cell to edit it and view its source page.{% else %}Click a value to edit it and view its source page.{% endif %}</p>
+      </div>
+      {% if not line_item_table %}
+      <span class="badge badge-neutral">{{ scalar_fields | length }} field{{ '' if scalar_fields | length == 1 else 's' }}</span>
+      {% endif %}
+    </header>
+
+    {% if line_item_table %}
+    <nav class="tab-list card-tabs" aria-label="Invoice document data">
+      <a class="tab {{ 'is-active' if active_tab == 'fields' else '' }}" href="?document_id={{ selected.id }}&page={{ selected_page }}&tab=fields"{% if active_tab == 'fields' %} aria-current="page"{% endif %}>
+        {{ icon('file-text', 14) }}<span>Fields</span><span class="tab-count">{{ scalar_fields | length }}</span>
+      </a>
+      <a class="tab {{ 'is-active' if active_tab == 'items' else '' }}" href="?document_id={{ selected.id }}&page={{ selected_page }}&tab=items"{% if active_tab == 'items' %} aria-current="page"{% endif %}>
+        {{ icon('table', 14) }}<span>Line items</span><span class="tab-count">{{ line_item_table.rows | length }}</span>
+      </a>
+    </nav>
+    {% endif %}
+
+    {% set reviewed = labels | map(attribute='field_path') | list %}
+    <div class="card-body field-list" data-tab-panel="fields"{% if active_tab == 'items' %} hidden{% endif %}>
+      {% for path, field in scalar_fields.items() %}
+      {% set field_label = path | replace('.', ' ') | replace('[', ' ') | replace(']', '') | humanize %}
+      <article class="field-card inline-field" tabindex="0" data-page="{{ field.provenance.page_index }}" data-box='{{ boxes.get(path) | tojson }}'>
+        {{ review_value(path, field, field_label, 'field-value-' ~ loop.index, document, item, reviewed, read_only) }}
+      </article>
+      {% else %}
+        <div class="empty compact">
+          <span class="empty-icon">{{ icon('file-search', 18) }}</span>
+          <p class="empty-title">{% if processing %}Extraction in progress{% else %}No fields extracted{% endif %}</p>
+          <p class="empty-copy">{% if processing %}Values will appear here as soon as the pipeline finishes.{% else %}Review the retained outcome below.{% endif %}</p>
+        </div>
+      {% endfor %}
+
+      {% if item and not read_only %}
+      {% if document.status == 'unreadable' or not display_fields %}
+      <form class="resolve-form" data-resolve="/review/queues/{{ item.id }}/resolve">
+        <input name="outcome" type="hidden" value="{{ 'unreadable_confirmed' if document.status == 'unreadable' else 'failure_confirmed' }}">
+        <label class="field"><span class="field-label">Reason</span><textarea name="reason" required minlength="4" maxlength="4000" placeholder="Describe what you observed."></textarea></label>
+        <div class="form-actions"><button class="btn btn-primary" type="submit" data-busy-label="Saving…">{{ icon('check', 14) }}<span>Confirm {{ 'unreadable' if document.status == 'unreadable' else 'failed extraction' }} outcome</span></button></div>
+      </form>
+      {% else %}
+      <div class="field-actions">
+        <button class="btn btn-secondary" type="button" data-confirm-remaining="/review/documents/{{ selected.id }}/confirm-remaining" data-confirm-dialog="Confirm every remaining field on this document as reviewed?" data-busy-label="Confirming…">{{ icon('check-check', 14) }}<span>Confirm remaining fields</span></button>
+      </div>
+      {% endif %}
+      {% endif %}
+    </div>
+
+    {% if line_item_table %}
+    <div class="card-body line-items-panel" data-tab-panel="items"{% if active_tab != 'items' %} hidden{% endif %}>
+      <section class="invoice-items" aria-label="Line items">
+        {% if line_item_table.incomplete %}<div class="notice notice-warning">{{ icon('circle-alert', 16) }}<p>Some line items may be missing. Compare the extracted rows with the source document.</p></div>{% endif %}
+        {% if line_item_table.rows %}
+        <div class="table-wrap line-items-scroll" tabindex="0" role="region" aria-label="Invoice line items">
+          <table class="line-items-table">
+            <caption class="sr-only">Extracted line items. Select a cell to view its evidence or edit its value.</caption>
+            <thead><tr><th scope="col">#</th>{% for column in line_item_table.columns %}<th scope="col">{{ column.label }}</th>{% endfor %}</tr></thead>
+            <tbody>
+            {% for row in line_item_table.rows %}
+              <tr><th scope="row" class="row-index">{{ row.index + 1 }}</th>
+              {% for column in line_item_table.columns %}
+              {% set cell = row.cells.get(column.key) %}
+              <td>
+                {% if cell %}
+                <div class="line-item-cell" tabindex="0" data-page="{{ cell.field.provenance.page_index }}" data-box='{{ boxes.get(cell.path) | tojson }}'>
+                {{ review_value(cell.path, cell.field, 'Line item ' ~ (row.index + 1) ~ ' ' ~ column.label, 'line-item-' ~ row.index ~ '-' ~ column.key, document, item, reviewed, read_only, compact=true) }}
+                </div>
+                {% else %}<span class="text-muted missing-cell">Not extracted</span>{% endif %}
+              </td>
+              {% endfor %}
+              </tr>
+            {% endfor %}
+            </tbody>
+          </table>
+        </div>
+        {% else %}<p class="text-muted">{% if processing %}Line items are still being extracted.{% else %}No line items were extracted.{% endif %}</p>{% endif %}
+      </section>
+    </div>
+    {% endif %}
+  </section>
+
+  <section class="card source-panel">
+    <header class="card-header">
+      <div>
+        <h2 class="card-title">Source page</h2>
+        <p class="card-subtitle" data-evidence-status role="status">Select a field to highlight available evidence.</p>
+      </div>
+      <a class="btn btn-ghost btn-sm" href="/review/media/documents/{{ selected.id }}/source" target="_blank" rel="noopener" title="Open the uploaded document in a new tab">{{ icon('external-link', 14) }}<span>Open original</span></a>
+    </header>
+    <div class="card-body">
+      <nav class="page-controls" aria-label="Source pages">
+        <a data-page-link="previous" class="btn btn-secondary btn-sm" href="?document_id={{ selected.id }}&page={{ [selected.page_start, selected_page - 1] | max }}{% if line_item_table %}&tab={{ active_tab }}{% endif %}">{{ icon('chevron-left', 14) }}<span>Previous</span></a>
+        <span class="page-counter" data-page-label>Page {{ selected_page + 1 }}</span>
+        <a data-page-link="next" class="btn btn-secondary btn-sm" href="?document_id={{ selected.id }}&page={{ [selected.page_end, selected_page + 1] | min }}{% if line_item_table %}&tab={{ active_tab }}{% endif %}"><span>Next</span>{{ icon('chevron-right', 14) }}</a>
+      </nav>
+      <figure class="page" id="page-{{ selected_page }}" data-source-page>
+        <div class="page-image">
+          <img data-source-image alt="Source page {{ selected_page + 1 }}" src="/review/media/documents/{{ selected.id }}/pages/{{ selected_page }}">
+          <div class="bbox" hidden></div>
+        </div>
+        <p class="media-error" data-media-error hidden>{{ icon('image-off', 16) }} Source image unavailable or expired. Field values and review actions remain available.</p>
+        <figcaption class="page-caption">Page {{ selected_page + 1 }} of {{ selected.page_end - selected.page_start + 1 }}</figcaption>
+      </figure>
+    </div>
+  </section>
+</div>
+{% else %}
+<div class="card">
+  <div class="empty">
+    <span class="empty-icon">{{ icon('files', 20) }}</span>
+    <p class="empty-title">No documents yet</p>
+    <p class="empty-copy">Documents appear here after the submission is accepted.</p>
+  </div>
+</div>
+{% endif %}
+
+<details class="card more-details">
+  <summary class="details-summary">
+    <span class="details-summary-label">{{ icon('sliders-horizontal', 16) }}<span>More details</span></span>
+    {{ icon('chevron-down', 14, 'details-chevron') }}
+  </summary>
+  <div class="card-body stack">
+    <dl class="meta-grid">
+      <div><dt>Job ID</dt><dd class="mono">{{ job.id }}</dd></div>
+      <div><dt>Created</dt><dd>{{ job.created_at | when }}</dd></div>
+      <div><dt>Last submission</dt><dd>{{ job.last_submission_at | when }}</dd></div>
+      <div><dt>Terminal</dt><dd>{{ job.terminal_at | when }}</dd></div>
+      <div><dt>Policy</dt><dd class="mono">{{ job.policy_id }}</dd></div>
+    </dl>
+    {% if selected %}
+    <p class="text-muted">{{ selected.id }} · {{ selected.created_at | when }}{% if selected.decision_reason %} · {{ selected.decision_reason }}{% endif %}</p>
+    <details class="disclosure">
+      <summary>Checks and decision</summary>
+      <pre>{{ document.checks | tojson(indent=2) }}</pre>
+      <pre>{{ document.decision | tojson(indent=2) }}</pre>
+    </details>
+    <details class="disclosure">
+      <summary>Resolution history</summary>
+      {% for label in labels %}
+      <p class="history-line"><span class="mono">{{ label.field_path }}</span> · {{ label.outcome }} · {{ label.reason }} · {{ label.reviewer_name }} · {{ label.created_at | when }}</p>
+      {% else %}<p class="text-muted">No resolutions recorded.</p>{% endfor %}
+    </details>
+    {% endif %}
+    <details class="disclosure">
+      <summary>View result JSON</summary>
+      <pre class="result-json" data-result-json>{{ result_json | tojson(indent=2) }}</pre>
+    </details>
+
+    <section class="subcard">
+      <header class="subcard-header"><div><h2>Review items</h2><p>Human work attached to this job.</p></div></header>
+      {% if items %}
+      <ul class="queue-list">
+        {% for item in items %}
+        <li class="queue-item">
+          <span class="queue-icon">{{ icon('file-search' if item.track == 'extraction' else 'triangle-alert', 16) }}</span>
+          <div class="queue-main">
+            <a class="table-link" href="{{ '/review/documents/' ~ item.document_id if item.track == 'extraction' else '/review/conflicts/' ~ item.conflict_id }}">{{ item.summary }}</a>
+            <p class="queue-meta-line"><span class="badge badge-{{ item.status | badge }}">{{ item.status | humanize }}</span><span class="chip">{{ item.track | humanize }}</span></p>
+          </div>
+          <div class="queue-meta">
+            <small class="text-muted nowrap">{{ item.created_at | when }}</small>
+            {% if not read_only %}
+            <div class="queue-actions">
+              <button class="btn btn-secondary btn-sm" type="button" data-action="/review/queues/{{ item.id }}/claim" data-busy-label="Claiming…">Claim</button>
+              <button class="btn btn-ghost btn-sm" type="button" data-action="/review/queues/{{ item.id }}/release" data-busy-label="Releasing…">Release</button>
+            </div>
+            {% endif %}
+          </div>
+        </li>
+        {% endfor %}
+      </ul>
+      {% else %}
+      <div class="empty compact"><span class="empty-icon">{{ icon('circle-check', 18) }}</span><p class="empty-title">No review items</p><p class="empty-copy">Nothing is waiting for a human on this job.</p></div>
+      {% endif %}
+    </section>
+
+    <section class="subcard">
+      <header class="subcard-header"><div><h2>Submissions</h2><p>API requests accumulated into this job.</p></div></header>
+      {% if submissions %}
+      <div class="table-wrap">
+        <table class="table">
+          <thead><tr><th scope="col">Result</th><th scope="col">Status</th><th scope="col" class="num">Documents</th><th scope="col" class="num">Duplicates</th><th scope="col">Webhook</th><th scope="col">Created</th><th scope="col">Completed</th></tr></thead>
+          <tbody>
+          {% for submission in submissions %}
+            <tr>
+              <td class="mono">{{ submission.result_id }}</td>
+              <td><span class="badge badge-{{ submission.status | badge }}">{{ submission.status | humanize }}</span></td>
+              <td class="num tabular">{{ submission.document_count }}</td>
+              <td class="num tabular">{{ submission.duplicate_count }}</td>
+              <td>{{ 'Enabled' if submission.webhook_url else '—' }}</td>
+              <td class="text-muted nowrap">{{ submission.created_at | when }}</td>
+              <td class="text-muted nowrap">{{ submission.completed_at | when }}</td>
+            </tr>
+          {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      {% else %}
+      <div class="empty compact"><span class="empty-icon">{{ icon('send', 18) }}</span><p class="empty-title">No submissions</p><p class="empty-copy">Submissions will appear here once the job receives documents.</p></div>
+      {% endif %}
+    </section>
+  </div>
+</details>
+{% endblock %}

@@ -113,7 +113,7 @@ DOCUMENT_SCHEMAS: dict[str, SchemaSpec] = {
     "commercial_invoice": SchemaSpec(
         model=CommercialInvoice,
         version="invoice.peppol-1.0",
-        prompt="invoice.md",
+        prompt="02-commercial-invoice.md",
         checks="invoice_full",
         tables=frozenset({"line_items"}),
         document_type="commercial_invoice",
@@ -121,7 +121,7 @@ DOCUMENT_SCHEMAS: dict[str, SchemaSpec] = {
     "proforma_invoice": SchemaSpec(
         model=ProformaInvoice,
         version="proforma.peppol-1.0",
-        prompt="proforma.md",
+        prompt="03-proforma-invoice.md",
         checks="advisory",
         tables=frozenset({"line_items"}),
         document_type="proforma_invoice",
@@ -129,7 +129,7 @@ DOCUMENT_SCHEMAS: dict[str, SchemaSpec] = {
     "bill_of_lading": SchemaSpec(
         model=BillOfLading,
         version="bl.dcsa-1.0",
-        prompt="bill_of_lading.md",
+        prompt="04-bill-of-lading.md",
         checks="advisory",
         tables=frozenset({"containers"}),
         document_type="bill_of_lading",
@@ -137,7 +137,7 @@ DOCUMENT_SCHEMAS: dict[str, SchemaSpec] = {
     "delivery_order": SchemaSpec(
         model=DeliveryOrder,
         version="delivery_order.local-1.0",
-        prompt="delivery_order.md",
+        prompt="05-delivery-order.md",
         checks="advisory",
         tables=frozenset({"containers"}),
         document_type="delivery_order",
@@ -145,7 +145,7 @@ DOCUMENT_SCHEMAS: dict[str, SchemaSpec] = {
     "port_pass": SchemaSpec(
         model=PortPass,
         version="port_pass.local-1.0",
-        prompt="port_pass.md",
+        prompt="06-port-pass.md",
         checks="advisory",
         tables=frozenset(),
         document_type="port_pass",
@@ -153,7 +153,7 @@ DOCUMENT_SCHEMAS: dict[str, SchemaSpec] = {
     "custom_entry": SchemaSpec(
         model=CustomEntry,
         version="custom_entry.wco-1.0",
-        prompt="custom_entry.md",
+        prompt="07-custom-entry.md",
         checks="advisory",
         tables=frozenset({"goods_lines", "assessment"}),
         provisional=PROVISIONAL,
@@ -162,7 +162,7 @@ DOCUMENT_SCHEMAS: dict[str, SchemaSpec] = {
     "verification_memo": SchemaSpec(
         model=VerificationMemo,
         version="verification_memo.local-1.0",
-        prompt="verification_memo.md",
+        prompt="08-verification-memo.md",
         checks="advisory",
         tables=frozenset({"findings"}),
         document_type="verification_memo",

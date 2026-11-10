@@ -1,0 +1,191 @@
+{% from "partials/icon.html" import icon %}
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light">
+<title>{{ title }} · Trade Extract</title>
+<link rel="stylesheet" href="/review/static/review.css">
+<script src="/review/static/review.js" defer></script>
+</head>
+<body>
+{% include "partials/icons.html" %}
+<a class="skip-link" href="#main">Skip to content</a>
+<div class="nav-progress" data-nav-progress aria-hidden="true"></div>
+
+{% set path = request.url.path %}
+{% macro nav_item(href, label, icon_name, active, badge=None, badge_alert=false) %}
+<a class="sidebar-item{{ ' is-active' if active else '' }}" href="{{ href }}"{% if active %} aria-current="page"{% endif %} title="{{ label }}" data-nav-item>
+  <span class="sidebar-item-icon">{{ icon(icon_name, 16) }}</span>
+  <span class="sidebar-item-label">{{ label }}</span>
+  {% if badge is not none %}<span class="badge {{ 'badge-danger' if badge_alert else 'badge-neutral' }} sidebar-item-badge">{{ badge }}</span>{% endif %}
+</a>
+{% endmacro %}
+
+<div class="app-shell" data-app-shell>
+  <div class="sidebar-backdrop" data-sidebar-close aria-hidden="true"></div>
+  <aside class="sidebar" id="app-sidebar" data-sidebar aria-label="Application">
+    <div class="sidebar-header">
+      <a class="brand" href="/review" title="Trade Extract — Review console">
+        <span class="brand-mark" aria-hidden="true">{{ icon('file-text', 16) }}</span>
+        <span class="brand-copy">
+          <span class="brand-title">Trade Extract</span>
+          <span class="brand-subtitle">Review console</span>
+        </span>
+      </a>
+      <button class="icon-btn sidebar-collapse" type="button" data-sidebar-collapse aria-label="Collapse sidebar" title="Collapse sidebar">
+        <span class="when-expanded">{{ icon('panel-left-close', 16) }}</span>
+        <span class="when-collapsed">{{ icon('panel-left-open', 16) }}</span>
+      </button>
+    </div>
+
+    <nav class="sidebar-nav" aria-label="Review navigation">
+      <section class="sidebar-section">
+        <p class="sidebar-label">Workspace</p>
+        {{ nav_item('/review', 'Dashboard', 'layout-dashboard', path == '/review') }}
+        {{ nav_item('/review/jobs', 'Jobs', 'briefcase', path.startswith('/review/jobs')) }}
+      </section>
+      <section class="sidebar-section">
+        <p class="sidebar-label">Review</p>
+        {{ nav_item('/review/queues/extraction', 'Extraction', 'file-search', path.startswith('/review/queues/extraction') or path.startswith('/review/documents/'), counts.get('extraction', 0)) }}
+        {{ nav_item('/review/queues/conflicts', 'Conflicts', 'triangle-alert', path.startswith('/review/queues/conflicts') or path.startswith('/review/conflicts/'), counts.get('conflict', 0), counts.get('conflict', 0) > 0) }}
+      </section>
+      <section class="sidebar-section">
+        <p class="sidebar-label">Operations</p>
+        {{ nav_item('/review/activity', 'Activity', 'activity', path.startswith('/review/activity')) }}
+        {{ nav_item('/review/team', 'Team', 'users', path.startswith('/review/team')) }}
+        {{ nav_item('/review/clients', 'Clients', 'building-2', path.startswith('/review/clients')) }}
+      </section>
+    </nav>
+
+    <div class="sidebar-footer">
+      {% if reviewer %}
+      <details class="menu sidebar-user-menu" data-menu>
+        <summary class="sidebar-user">
+          <span class="avatar" aria-hidden="true">{{ (reviewer.display_name or reviewer.username)[0] | upper }}</span>
+          <span class="sidebar-user-copy">
+            <span class="sidebar-user-name">{{ reviewer.display_name or reviewer.username }}</span>
+            <span class="sidebar-user-role">{{ reviewer.role | humanize }}</span>
+          </span>
+          <span class="sidebar-user-caret">{{ icon('chevron-down', 14) }}</span>
+        </summary>
+        <div class="menu-panel menu-panel-up">
+          <p class="menu-heading">Signed in as <strong>{{ reviewer.username }}</strong></p>
+          <button class="menu-item" type="button" data-post="/review/logout" data-busy-label="Signing out…">
+            {{ icon('log-out', 16) }}<span>Log out</span>
+          </button>
+          <button class="menu-item" type="button" data-post="/review/logout-all" data-confirm-dialog="This signs out every active session for your account. Continue?" data-busy-label="Signing out…">
+            {{ icon('shield-check', 16) }}<span>Sign out everywhere</span>
+          </button>
+        </div>
+      </details>
+      {% endif %}
+    </div>
+  </aside>
+
+  <div class="main">
+    <header class="topbar">
+      <div class="topbar-start">
+        <button class="icon-btn mobile-menu" type="button" data-sidebar-open aria-label="Open navigation" title="Open navigation">
+          {{ icon('menu', 16) }}
+        </button>
+        {% block topbar_lead %}{% endblock %}
+        <nav class="breadcrumbs" aria-label="Breadcrumb">
+          <a class="breadcrumb-home" href="/review" title="Dashboard">
+            {{ icon('home', 14) }}<span class="sr-only">Dashboard</span>
+          </a>
+          {% for crumb in breadcrumbs %}
+          {{ icon('chevron-right', 12, 'breadcrumb-sep') }}
+          {% if crumb.href %}
+          <a href="{{ crumb.href }}">{{ crumb.label }}</a>
+          {% else %}
+          <span aria-current="page">{{ crumb.label }}</span>
+          {% endif %}
+          {% endfor %}
+        </nav>
+      </div>
+
+      <div class="topbar-middle">
+        <form class="global-search" action="/review/jobs" method="get" role="search">
+          <label class="sr-only" for="global-search">Search jobs</label>
+          <span class="global-search-icon">{{ icon('search', 14) }}</span>
+          <input id="global-search" name="q" type="search" placeholder="Search jobs, clients…" value="{{ query or '' }}" autocomplete="off" data-global-search>
+          <kbd class="search-kbd" data-search-kbd>Ctrl K</kbd>
+        </form>
+      </div>
+
+      <div class="topbar-end">
+        <a class="icon-btn topbar-link" href="/docs" target="_blank" rel="noopener" title="API documentation" aria-label="API documentation">
+          {{ icon('book-open', 16) }}
+        </a>
+        <details class="menu topbar-menu" data-menu>
+          <summary class="icon-btn menu-trigger" title="Review queues" aria-label="Review queues">
+            {{ icon('bell', 16) }}
+            {% if counts.get('extraction', 0) or counts.get('conflict', 0) %}<span class="notification-dot" aria-hidden="true"></span>{% endif %}
+          </summary>
+          <div class="menu-panel menu-panel-end">
+            <p class="menu-heading">Review queues</p>
+            <a class="menu-item" href="/review/queues/extraction">
+              {{ icon('file-search', 16) }}<span>Extraction reviews</span>
+              <span class="menu-count">{{ counts.get('extraction', 0) }}</span>
+            </a>
+            <a class="menu-item" href="/review/queues/conflicts">
+              {{ icon('triangle-alert', 16) }}<span>Open conflicts</span>
+              <span class="menu-count">{{ counts.get('conflict', 0) }}</span>
+            </a>
+            <div class="menu-separator" role="presentation"></div>
+            <a class="menu-item" href="/review/activity">
+              {{ icon('activity', 16) }}<span>Recent decisions</span>
+            </a>
+          </div>
+        </details>
+        {% if reviewer %}
+        <span class="topbar-avatar avatar" aria-hidden="true" title="{{ reviewer.display_name or reviewer.username }}">{{ (reviewer.display_name or reviewer.username)[0] | upper }}</span>
+        {% endif %}
+      </div>
+    </header>
+
+    {% if not hide_page_head %}
+    <div class="page-head">
+      <div class="page-head-copy">
+        <h1>{{ title }}</h1>
+        {% if subtitle %}<p class="page-subtitle">{{ subtitle }}</p>{% endif %}
+      </div>
+      <div class="page-actions">
+        {% block actions %}{% endblock %}
+        {% set show_create_job = path == '/review' or path == '/review/jobs' %}
+        {% if not read_only and show_create_job %}
+        <a class="btn btn-primary btn-sm" href="/review/jobs/new">{{ icon('plus', 14) }}<span>Create job</span></a>
+        {% endif %}
+      </div>
+    </div>
+    {% endif %}
+
+    <main class="page" id="main" tabindex="-1">
+      {% block content %}{% endblock %}
+    </main>
+  </div>
+</div>
+
+<div class="toast-region" aria-live="polite" aria-atomic="true">
+  <div id="feedback" class="toast" role="status"></div>
+</div>
+
+<dialog class="modal" id="confirm-dialog" aria-labelledby="confirm-title" aria-describedby="confirm-message">
+  <form method="dialog" class="modal-card">
+    <div class="modal-head">
+      <h2 id="confirm-title">Confirm action</h2>
+      <button class="icon-btn" type="submit" value="cancel" aria-label="Close">{{ icon('x', 16) }}</button>
+    </div>
+    <p class="modal-message" id="confirm-message"></p>
+    <div class="modal-actions">
+      <button class="btn btn-secondary" type="submit" value="cancel">Cancel</button>
+      <button class="btn btn-primary" type="submit" value="confirm" data-confirm-accept>Continue</button>
+    </div>
+  </form>
+</dialog>
+
+<input id="csrf" type="hidden" value="{{ csrf }}">
+</body>
+</html>

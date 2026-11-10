@@ -22,8 +22,9 @@ from trade_extract.domain.readers import FieldCandidate, PageFeatures, PageInput
 from trade_extract.providers.base import ModelProvider
 from trade_extract.schemas.base import DocumentEnvelope, EnvelopeSource, TableMeta
 from trade_extract.schemas.registry import get_schema
+from trade_extract.services.local_extraction import compact_evidence, evidence_lines, extract_local
 from trade_extract.services.readers import Reader, TextLayerReader, VisionReader
-from trade_extract.services.readers.base import partial_model
+from trade_extract.services.readers.base import compact_schema, compact_value_schema, partial_model
 from trade_extract.services.readers.paddle import (
     PaddleReader,
     contains,
@@ -35,6 +36,27 @@ from trade_extract.services.routing import route_page
 from trade_extract.services.tables import build_inventory, native_crops, reconcile
 
 SelectionPolicy = Callable[[tuple[FieldCandidate, ...]], FieldCandidate]
+
+
+class _BudgetedProvider:
+    def __init__(self, provider: ModelProvider, counter: list[int], limit: int) -> None:
+        self._provider = provider
+        self._counter = counter
+        self._limit = limit
+        self.name = getattr(provider, "name", "provider")
+
+    def _claim(self) -> None:
+        if self._counter[0] >= self._limit:
+            raise ProviderError("provider_call_budget_exhausted")
+        self._counter[0] += 1
+
+    def text_reason(self, request: InferenceRequest):
+        self._claim()
+        return self._provider.text_reason(request)
+
+    def vision_extract(self, request: InferenceRequest):
+        self._claim()
+        return self._provider.vision_extract(request)
 
 
 class ExtractionGuard(ValueError):
@@ -127,10 +149,11 @@ def extract(
     pages: tuple[PageInput, ...],
     segment_id: str | None = None,
     readers: Sequence[Reader] | None = None,
-    max_repairs: int = 2,
+    max_repairs: int | None = None,
     select: SelectionPolicy = stable_selection,
     settings: Settings | None = None,
     _structure_pass: int = 0,
+    _provider_calls: list[int] | None = None,
 ) -> ExtractionOutcome:
     routes: tuple[Any, ...] = ()
     inventory = TableInventory()
@@ -142,9 +165,18 @@ def extract(
         kwargs.setdefault("diagnostics", tuple(diagnostics))
         return ExtractionOutcome(*args, **kwargs)
 
-    if not 0 <= max_repairs <= 2:
-        raise ValueError("max_repairs must be between zero and two")
     settings = settings or Settings()
+    if max_repairs is None:
+        max_repairs = min(settings.provider_max_repairs, 1)
+    if not 0 <= max_repairs <= 1:
+        raise ValueError("max_repairs must be between zero and one")
+    if _provider_calls is None:
+        _provider_calls = [0]
+        provider = _BudgetedProvider(
+            provider,
+            _provider_calls,
+            max(1, len(pages)) * settings.provider_max_calls_per_page,
+        )
     configured = (
         tuple(readers)
         if readers is not None
@@ -176,6 +208,9 @@ def extract(
         source_hash=source.document_hash,
         schema_json=partial_model(document_type).json_schema(),
         segment_id=segment_id,
+        page_count=max(1, len(usable)),
+        max_output_tokens=settings.provider_max_output_tokens,
+        source_json=source.model_dump(mode="json"),
         evidence=json.dumps(
             {
                 "source": source.model_dump(),
@@ -187,9 +222,7 @@ def extract(
     route_map = {r.page_index: r for r in routes}
     paddle = next((r for r in configured if isinstance(r, PaddleReader)), None)
     if paddle is not None:
-        paddle = PaddleReader(
-            settings, backend=paddle.backend, raw_ocr_cache=paddle.raw_ocr_cache
-        )
+        paddle = PaddleReader(settings, backend=paddle.backend, raw_ocr_cache=paddle.raw_ocr_cache)
         configured = tuple(paddle if isinstance(r, PaddleReader) else r for r in configured)
     prepared = []
     for p in usable:
@@ -200,7 +233,11 @@ def extract(
                 return outcome(
                     "extraction_failed", errors=("ocr_cached_evidence_invalid", *unreadable_errors)
                 )
-        if paddle is not None and ReaderKind.PADDLE in route_map[p.page_index].readers:
+        if (
+            paddle is not None
+            and p.ocr is None
+            and ReaderKind.PADDLE in route_map[p.page_index].readers
+        ):
             evidence = paddle.inspect(p, require_structure=route_map[p.page_index].table_required)
             p = replace(p, ocr=evidence)
             diagnostics.extend(f"page:{p.page_index}:{d}" for d in evidence.diagnostics)
@@ -213,6 +250,67 @@ def extract(
         prepared.append(p)
     usable = tuple(prepared)
     page_map = {p.page_index: p for p in usable}
+    lines = evidence_lines(usable)
+    local_candidates = extract_local(document_type, spec, source.document_hash, lines)
+    candidates: list[FieldCandidate] = list(local_candidates)
+    diagnostics.extend(f"local:{candidate.field_path}" for candidate in local_candidates)
+    request = replace(
+        request,
+        schema_json=compact_value_schema(
+            document_type,
+            # LLM priority: the provider is asked for every required path so its
+            # values compete with local candidates instead of being filtered out
+            # by allowed_scalar_paths (disagreement -> DISPUTED -> review).
+            frozenset()
+            if settings.llm_extraction_priority
+            else frozenset(candidate.field_path for candidate in local_candidates),
+        ),
+        evidence=request.evidence
+        + "\nCompact evidence index:\n"
+        + compact_evidence(
+            lines,
+            max_characters=(
+                settings.provider_max_evidence_characters_per_page * max(1, len(usable))
+            ),
+        ),
+        stage="unresolved_fields",
+    )
+
+    def retain_partial(error_codes: tuple[str, ...]) -> ExtractionOutcome | None:
+        if not candidates or unreadable_errors:
+            return None
+        merged_partial = merge_candidates(candidates)
+        try:
+            partial = partial_model(document_type).model_validate(
+                {
+                    "segment_id": segment_id,
+                    "document_type": document_type,
+                    "schema_version": spec.version,
+                    "status": DocumentStatus.REVIEW_REQUIRED,
+                    "source": source.model_dump(mode="json"),
+                    "fields": {
+                        path: field
+                        for path, field in merged_partial.items()
+                        if not path.startswith("extension.")
+                    },
+                    "tables": {},
+                    "extension": {
+                        path: field
+                        for path, field in merged_partial.items()
+                        if path.startswith("extension.")
+                    },
+                }
+            )
+        except ValidationError:
+            return None
+        diagnostics.append("partial_evidence_retained")
+        return outcome(
+            "extracted",
+            document=partial,
+            candidates=tuple(candidates),
+            errors=(*error_codes, *unreadable_errors),
+        )
+
     routes = tuple(
         route_page(
             p,
@@ -224,6 +322,41 @@ def extract(
     )
     route_map = {r.page_index: r for r in routes}
     required = {r.page_index for r in routes if r.table_required}
+    local_paths = {candidate.field_path for candidate in local_candidates}
+    required_scalars = set(spec.model.field_set.required_scalar_paths)
+    if (
+        required_scalars
+        and required_scalars <= local_paths
+        and not required
+        and not unreadable_errors
+        # LLM priority: never short-circuit the provider; local candidates
+        # still merge as corroboration below (disagreement -> DISPUTED).
+        and not settings.llm_extraction_priority
+    ):
+        local_fields = merge_candidates(local_candidates)
+        try:
+            local_document = spec.model.model_validate(
+                {
+                    "segment_id": segment_id,
+                    "document_type": document_type,
+                    "schema_version": spec.version,
+                    "status": DocumentStatus.EXTRACTED,
+                    "source": source.model_dump(mode="json"),
+                    "fields": local_fields,
+                    "tables": {},
+                    "extension": {},
+                }
+            )
+        except ValidationError:
+            diagnostics.append("local_schema_incomplete")
+        else:
+            diagnostics.append("provider_skipped_local_complete")
+            return outcome(
+                "extracted",
+                document=local_document,
+                candidates=local_candidates,
+                errors=tuple(diagnostics),
+            )
     inventory = build_inventory(usable, required, settings)
     request = replace(
         request,
@@ -262,7 +395,6 @@ def extract(
             routes=routes,
             inventory=inventory,
         )
-    candidates: list[FieldCandidate] = []
     documents: list[DocumentEnvelope] = []
     for reader in configured:
         if isinstance(reader, PaddleReader) and paddle is not None:
@@ -310,7 +442,23 @@ def extract(
                 crops=tuple(c for c in crops if c.row.page_index in evidence_pages),
                 settings=settings,
             )
-        current = request
+        current = (
+            replace(
+                request,
+                schema_json=compact_schema(
+                    document_type,
+                    # LLM priority: vision sees the full contract too; returned
+                    # values are never filtered, only the prompt hint changes.
+                    frozenset()
+                    if settings.llm_extraction_priority
+                    else frozenset(candidate.field_path for candidate in local_candidates),
+                ),
+                stage="vision_or_ocr_document",
+            )
+            if isinstance(reader, (VisionReader, PaddleReader))
+            else request
+        )
+        base_request = current
         for attempt in range(max_repairs + 1):
             result = None
             try:
@@ -375,6 +523,9 @@ def extract(
                 )
                 break
             except ProviderError as exc:
+                partial = retain_partial((exc.code,))
+                if partial is not None:
+                    return partial
                 return outcome(
                     "extraction_failed",
                     candidates=tuple(candidates),
@@ -426,19 +577,27 @@ def extract(
                     errors = (
                         "$:invalid_json"
                         if isinstance(exc, json.JSONDecodeError)
+                        else "$:" + str(exc)
+                        if isinstance(exc, ValueError)
+                        and str(exc).startswith("invalid_compact_provider_")
                         else "$:invalid_provider_document",
                     )
                 if attempt == max_repairs:
+                    partial = retain_partial(errors)
+                    if partial is not None:
+                        return partial
                     return outcome(
                         "extraction_failed",
                         candidates=tuple(candidates),
                         errors=(*errors, *unreadable_errors),
                     )
                 current = replace(
-                    request,
+                    base_request,
                     repair_errors=errors,
                     previous_json=(
-                        result.raw_json
+                        result.repair_json
+                        if result is not None and result.repair_json is not None
+                        else result.raw_json
                         if result is not None and isinstance(result.raw_json, str)
                         else json.dumps(result.raw_json)
                         if result is not None
@@ -563,6 +722,7 @@ def extract(
             select=select,
             settings=settings,
             _structure_pass=_structure_pass + 1,
+            _provider_calls=_provider_calls,
         )
     if newly_required:
         inventory = build_inventory(tuple(page_map.values()), required | newly_required, settings)
@@ -603,6 +763,9 @@ def extract(
     try:
         document = spec.model.model_validate(payload)
     except ValidationError:
+        partial = retain_partial(("merged_schema_invalid",))
+        if partial is not None:
+            return partial
         return outcome(
             "extraction_failed", candidates=tuple(candidates), errors=("merged_schema_invalid",)
         )

@@ -1,0 +1,60 @@
+{% extends "base.html" %}
+{% from "partials/icon.html" import icon %}
+{% block actions %}
+<a class="btn btn-secondary btn-sm" href="/review/jobs">{{ icon('briefcase', 14) }}<span>Jobs</span></a>
+{% if track == 'extraction' %}
+<a class="btn btn-secondary btn-sm" href="/review/queues/conflicts">{{ icon('triangle-alert', 14) }}<span>Conflict queue</span><span class="tab-count">{{ counts.get('conflict', 0) }}</span></a>
+{% else %}
+<a class="btn btn-secondary btn-sm" href="/review/queues/extraction">{{ icon('file-search', 14) }}<span>Extraction queue</span><span class="tab-count">{{ counts.get('extraction', 0) }}</span></a>
+{% endif %}
+{% endblock %}
+{% block content %}
+<section class="card">
+  <header class="card-header">
+    <div>
+      <h2 class="card-title">{{ 'Extraction' if track == 'extraction' else 'Conflict' }} queue</h2>
+      <p class="card-subtitle">Showing {{ items | length }} open item{{ '' if items | length == 1 else 's' }}{% if next_cursor %} · up to 100 per page{% endif %}.</p>
+    </div>
+    <a class="btn btn-ghost btn-sm" href="{{ '/review/queues/extraction' if track == 'extraction' else '/review/queues/conflicts' }}">{{ icon('rotate-cw', 14) }}<span>Refresh</span></a>
+  </header>
+
+  {% if items %}
+  <ul class="queue-list">
+    {% for i in items %}
+    <li class="queue-item">
+      <span class="queue-icon{{ ' queue-icon-warning' if track == 'conflicts' else '' }}">{{ icon('triangle-alert' if track == 'conflicts' else 'file-search', 16) }}</span>
+      <div class="queue-main">
+        <a class="table-link" href="{{ '/review/documents/' ~ i.document_id if i.track == 'extraction' else '/review/conflicts/' ~ i.conflict_id }}">{{ i.summary }}</a>
+        <p class="queue-meta-line">
+          <span class="badge badge-{{ i.status | badge }}">{{ i.status | humanize }}</span>
+          {% if i.reason_code %}<span class="chip">{{ i.reason_code | humanize }}</span>{% endif %}
+          <span class="mono text-muted">{{ i.id }}</span>
+        </p>
+      </div>
+      <div class="queue-meta">
+        <small class="text-muted nowrap">{{ i.created_at | when }}</small>
+        {% if not read_only %}
+        <div class="queue-actions">
+          <button class="btn btn-secondary btn-sm" type="button" data-action="/review/queues/{{ i.id }}/claim" data-busy-label="Claiming…">Claim</button>
+          <button class="btn btn-ghost btn-sm" type="button" data-action="/review/queues/{{ i.id }}/release" data-busy-label="Releasing…">Release</button>
+        </div>
+        {% endif %}
+      </div>
+    </li>
+    {% endfor %}
+  </ul>
+  {% if next_cursor %}
+  <footer class="card-footer">
+    <a class="btn btn-secondary btn-sm" href="/review/queues/{{ track }}?cursor={{ next_cursor }}"><span>Next page</span>{{ icon('arrow-right', 14) }}</a>
+  </footer>
+  {% endif %}
+  {% else %}
+  <div class="empty">
+    <span class="empty-icon">{{ icon('inbox', 20) }}</span>
+    <p class="empty-title">Nothing waiting</p>
+    <p class="empty-copy">No open {{ 'extraction reviews' if track == 'extraction' else 'conflicts' }} right now.</p>
+    <a class="btn btn-secondary btn-sm" href="/review/jobs">{{ icon('briefcase', 14) }}<span>Browse jobs</span></a>
+  </div>
+  {% endif %}
+</section>
+{% endblock %}

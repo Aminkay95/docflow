@@ -13,10 +13,14 @@ from trade_extract.review.auth import password_hash
 
 parser = argparse.ArgumentParser()
 parser.add_argument("username")
+parser.add_argument("--email", required=True, help="Address used for password reset links")
 parser.add_argument("--role", choices=("reviewer", "admin", "auditor"), default="reviewer")
 args = parser.parse_args()
 if not args.username.strip() or len(args.username) > 128:
     raise SystemExit("Username must contain 1–128 characters")
+email = args.email.strip().lower()
+if not email or "@" not in email or len(email) > 320:
+    raise SystemExit("Email must be a valid address")
 password = getpass.getpass()
 if len(password) < 12:
     raise SystemExit("Password must contain at least 12 characters")
@@ -29,6 +33,7 @@ with session_factory(make_engine(get_settings()))() as session:
         Reviewer(
             id=new_id("usr_"),
             username=args.username,
+            email=email,
             display_name=args.username,
             role=args.role,
             password_hash=password_hash(password),

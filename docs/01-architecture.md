@@ -562,3 +562,18 @@ worker persists an extraction snapshot, it inverse-maps every field, extension a
 alternative rectangle onto the original rendered source page. Public normalized boxes
 therefore overlay the caller's source page. Perspective produces enclosing rectangles;
 the retained page homography remains available for exact point/polygon mapping.
+
+## Local-first cost-capped extraction
+
+Extraction builds a bounded line-level evidence index from trusted PDF characters or validated
+Paddle spans. Conservative same-line label rules may emit exact scalar candidates with source
+geometry; a complete conventional invoice can finish without a provider call. Ambiguous or repeated
+matches are never promoted. DeepSeek receives one compact evidence copy and a partial schema with
+locally resolved scalar paths removed. A failed or truncated provider stage retains valid local
+fields as a review-required partial document instead of discarding them.
+
+Worker settings cap evidence characters, estimated input tokens, output tokens, calls and estimated
+worst-case provider cost. USD 0.04/page is an evaluation-corpus average target; the per-page safety
+ceiling is separate because difficult pages may cost more. Output truncation is a named failure and
+only one schema repair is attempted. Unknown image segments use local OCR for a second deterministic
+classification pass in live-provider workers; ambiguity skips the provider and routes to review.

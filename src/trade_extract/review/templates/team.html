@@ -1,0 +1,32 @@
+{% extends "base.html" %}
+{% from "partials/icon.html" import icon %}
+{% block content %}
+<section class="card">
+  <header class="card-header">
+    <div><h2 class="card-title">Review team</h2><p class="card-subtitle">Accounts that can sign in to this console.</p></div>
+    <span class="badge badge-neutral">{{ members | length }} member{{ '' if members | length == 1 else 's' }}</span>
+  </header>
+  <div class="table-wrap">
+    <table class="table">
+      <thead><tr><th scope="col">Member</th><th scope="col">Role</th><th scope="col">Status</th><th scope="col" class="num">Assigned open items</th><th scope="col">Last login</th><th scope="col">Created</th></tr></thead>
+      <tbody>
+      {% for member in members %}
+        <tr>
+          <td>
+            <span class="member">
+              <span class="avatar avatar-sm" aria-hidden="true">{{ (member.display_name or member.username)[0] | upper }}</span>
+              <span class="member-copy"><strong>{{ member.display_name or member.username }}</strong><small class="mono block text-muted">{{ member.username }}</small></span>
+            </span>
+          </td>
+          <td><span class="badge badge-{{ 'info' if member.role == 'admin' else ('neutral' if member.role == 'auditor' else 'primary') }}">{{ member.role | humanize }}</span></td>
+          <td><span class="badge badge-{{ 'success' if member.is_active else 'danger' }}">{{ 'Active' if member.is_active else 'Disabled' }}</span></td>
+          <td class="num tabular">{{ assigned.get(member.id, 0) }}</td>
+          <td class="text-muted nowrap">{{ member.last_login_at | when }}</td>
+          <td class="text-muted nowrap">{{ member.created_at | when }}</td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+{% endblock %}

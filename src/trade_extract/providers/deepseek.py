@@ -5,6 +5,7 @@ from __future__ import annotations
 import base64
 import io
 import json
+import logging
 import random
 import time
 from collections.abc import Callable
@@ -48,6 +49,8 @@ class DeepSeekProvider:
         return self._call(request, self.settings.deepseek_text_model, vision=False)
 
     def _call(self, request: InferenceRequest, model: str, *, vision: bool) -> ProviderResult:
+        if request.page_count < 1:
+            raise ProviderError("provider_budget_invalid")
         if request.pages and (not vision or model != "deepseek-flash"):
             raise ProviderError("image_capability_error")
         if len(request.pages) > self.settings.provider_max_images:
@@ -108,12 +111,37 @@ class DeepSeekProvider:
                     },
                 }
             )
+        max_output_tokens = min(
+            self.settings.provider_max_output_tokens,
+            request.max_output_tokens or self.settings.provider_max_output_tokens,
+        )
+        prompt = prompt_for(request)
+        if "json" not in prompt.lower():
+            # DeepSeek rejects response_format=json_object unless the prompt names it.
+            prompt = f"{prompt}\nReturn a single JSON object."
+        # Four UTF-8 characters per token is deliberately conservative enough for
+        # the Latin-heavy trade corpus. The hard character cap below remains the
+        # allocation boundary; live usage is recorded for evaluation.
+        estimated_input_tokens = (len(prompt) + len(request.evidence) + 3) // 4
+        input_limit = (
+            self.settings.provider_max_estimated_input_tokens_per_page * request.page_count
+        )
+        if estimated_input_tokens > input_limit:
+            raise ProviderError("provider_input_budget_exhausted")
+        estimated_cost = (
+            estimated_input_tokens * self.settings.provider_input_price_usd_per_million
+            + max_output_tokens * self.settings.provider_output_price_usd_per_million
+        ) / 1_000_000
+        if estimated_cost > (
+            self.settings.provider_cost_safety_ceiling_usd_per_page * request.page_count
+        ):
+            raise ProviderError("provider_cost_safety_ceiling_exhausted")
         body = {
             "model": model,
-            "max_tokens": self.settings.provider_max_output_tokens,
+            "max_tokens": max_output_tokens,
             "response_format": {"type": "json_object"},
             "messages": [
-                {"role": "system", "content": prompt_for(request)},
+                {"role": "system", "content": prompt},
                 {"role": "user", "content": content},
             ],
         }
@@ -122,6 +150,7 @@ class DeepSeekProvider:
             started = time.monotonic()
             result: ProviderResult | None = None
             error: ProviderError | None = None
+            usage_tokens = (0, 0, 0)
             try:
                 response = self.client.post(
                     self.settings.deepseek_base_url.rstrip("/") + "/chat/completions",
@@ -136,6 +165,14 @@ class DeepSeekProvider:
                     ),
                 )
                 if response.status_code >= 400:
+                    logging.getLogger(__name__).warning(
+                        "provider_http_error",
+                        extra={
+                            "status": response.status_code,
+                            "error_detail": response.text[:1000],
+                            "model": model,
+                        },
+                    )
                     error = ProviderError(
                         f"http_{response.status_code}",
                         retryable=(response.status_code == 429 or response.status_code >= 500),
@@ -145,7 +182,9 @@ class DeepSeekProvider:
                     if not isinstance(data, dict):
                         raise ValueError("invalid envelope")
                     usage = data.get("usage", {})
-                    raw_json = data["choices"][0]["message"]["content"]
+                    choice = data["choices"][0]
+                    raw_json = choice["message"]["content"]
+                    finish_reason = choice.get("finish_reason")
                     if not isinstance(raw_json, str) or not isinstance(usage, dict):
                         raise ValueError("invalid envelope")
                     tokens = [
@@ -154,13 +193,18 @@ class DeepSeekProvider:
                     ]
                     if any(value < 0 for value in tokens):
                         raise ValueError("invalid usage")
+                    usage_tokens = (tokens[0], tokens[1], tokens[2])
                     result = ProviderResult(
                         raw_json=raw_json,
                         model=model,
                         input_tokens=tokens[0],
                         output_tokens=tokens[1],
                         cached_tokens=tokens[2],
+                        finish_reason=str(finish_reason) if finish_reason is not None else None,
                     )
+                    if finish_reason == "length":
+                        error = ProviderError("provider_output_truncated")
+                        result = None
             except httpx.TimeoutException:
                 error = ProviderError("provider_timeout", retryable=True)
             except (httpx.NetworkError, httpx.RemoteProtocolError):
@@ -176,9 +220,9 @@ class DeepSeekProvider:
                     status="succeeded" if result else "failed",
                     latency_ms=latency,
                     error_code=error.code if error else None,
-                    input_tokens=result.input_tokens if result else 0,
-                    output_tokens=result.output_tokens if result else 0,
-                    cached_tokens=result.cached_tokens if result else 0,
+                    input_tokens=usage_tokens[0],
+                    output_tokens=usage_tokens[1],
+                    cached_tokens=usage_tokens[2],
                     segment_id=request.segment_id,
                     reader="vision" if vision else "text_layer",
                 )

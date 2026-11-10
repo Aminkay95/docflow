@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from datetime import UTC, datetime, timedelta
 
 import pytest
@@ -30,7 +31,7 @@ def docs(*payloads: bytes) -> list[tuple]:
     ]
 
 
-def test_dead_task_terminalises_file_submission_and_job(api: ApiHarness) -> None:
+def test_dead_task_terminalises_file_submission_and_job(api: ApiHarness, capsys) -> None:
     clock = FrozenClock(datetime.now(UTC))
     api.app.state.clock = clock
 
@@ -83,6 +84,14 @@ def test_dead_task_terminalises_file_submission_and_job(api: ApiHarness) -> None
     assert body["decision"]["value"] == "failed"
     assert body["decision"]["reasons"]
     assert body["progress"]["documents_failed"] == 1
+    printed = [
+        json.loads(line)
+        for line in capsys.readouterr().out.splitlines()
+        if line.startswith('{"event": "pipeline.result"')
+    ]
+    assert len(printed) == 1
+    assert printed[0]["result"]["job_id"] == accepted.json()["job_id"]
+    assert printed[0]["result"]["status"] == "failed"
     assert "Retry-After" not in polled.headers
 
 

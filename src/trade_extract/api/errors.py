@@ -6,7 +6,7 @@ from typing import Any
 
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
-from fastapi.responses import JSONResponse
+from fastapi.responses import HTMLResponse, JSONResponse
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from trade_extract.domain import errors
@@ -84,8 +84,41 @@ def register_exception_handlers(app: FastAPI) -> None:
         )
 
     @app.exception_handler(StarletteHTTPException)
-    async def _http_error(request: Request, exc: StarletteHTTPException) -> JSONResponse:
+    async def _http_error(
+        request: Request, exc: StarletteHTTPException
+    ) -> JSONResponse | HTMLResponse:
         request_id = request_id_for(request)
+        if (
+            exc.status_code == 401
+            and request.method in ("GET", "HEAD")
+            and request.url.path.startswith("/review")
+        ):
+            return HTMLResponse(
+                status_code=401,
+                content=(
+                    '<!doctype html><html lang="en"><head><meta charset="utf-8">'
+                    '<meta name="viewport" content="width=device-width, initial-scale=1">'
+                    "<title>Sign in required · Trade Extract</title>"
+                    '<link rel="stylesheet" href="/review/static/review.css"></head>'
+                    '<body class="login-body"><main class="login-shell">'
+                    '<section class="login-card login-card-compact">'
+                    '<a class="login-brand" href="/review">'
+                    '<span class="brand-mark" aria-hidden="true">'
+                    '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" '
+                    'stroke="currentColor" stroke-width="2" stroke-linecap="round" '
+                    'stroke-linejoin="round"><path d="M6 22a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h8'
+                    'a2.4 2.4 0 0 1 1.704.706l3.588 3.588A2.4 2.4 0 0 1 20 8v12a2 2 0 0 1-2 2z"/>'
+                    '<path d="M14 2v5a1 1 0 0 0 1 1h5"/></svg></span>'
+                    '<span class="brand-copy"><span class="brand-title">Trade Extract</span>'
+                    '<span class="brand-subtitle">Review console</span></span></a>'
+                    '<div class="login-heading"><h1>Sign in required</h1>'
+                    '<p class="login-lead">Your review session has expired or '
+                    "you are not signed in.</p></div>"
+                    '<a class="btn btn-primary btn-block" href="/review/login">Go to sign in</a>'
+                    "</section></main></body></html>"
+                ),
+                headers={"Cache-Control": "no-store", **(exc.headers or {})},
+            )
         if exc.status_code == 404:
             error = DomainError(
                 "endpoint_not_found",

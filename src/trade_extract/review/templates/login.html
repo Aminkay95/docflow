@@ -1,0 +1,36 @@
+{% extends "auth_layout.html" %}
+{% from "partials/icon.html" import icon %}
+{% block auth_content %}
+<div class="login-heading">
+  <h1>Welcome back</h1>
+  <p class="login-lead">Sign in to review extractions, reconcile conflicting documents and keep shipments moving.</p>
+</div>
+<form method="post" class="login-form">
+  {% if login_error %}
+  <div class="notice notice-danger" role="alert">{{ icon('circle-alert', 14) }}<p>{{ login_error }}</p></div>
+  {% endif %}
+  {% if login_notice %}
+  <div class="notice notice-success" role="status">{{ icon('circle-check', 14) }}<p>{{ login_notice }}</p></div>
+  {% endif %}
+  <input name="csrf" type="hidden" value="{{ login_csrf }}">
+  <label class="field">
+    <span class="field-label">Username</span>
+    <input name="username" autocomplete="username" value="{{ login_username }}" required autofocus>
+  </label>
+  <div class="field">
+    <div class="field-label-row">
+      <label class="field-label" for="password">Password</label>
+      <a class="field-link" href="/review/forgot-password">Forgot password?</a>
+    </div>
+    <div class="field-control">
+      <input id="password" type="password" name="password" autocomplete="current-password" required>
+      <button type="button" class="field-toggle" data-password-toggle aria-label="Show password" title="Show password">
+        {{ icon('eye', 16, 'field-toggle-show') }}
+        {{ icon('eye-off', 16, 'field-toggle-hide') }}
+      </button>
+    </div>
+  </div>
+  <button class="btn btn-primary btn-block" type="submit" data-busy-label="Signing in…"><span>Log in</span>{{ icon('arrow-right', 14) }}</button>
+</form>
+<p class="login-foot">{{ icon('lock', 12) }} Internal access only. Sessions expire after inactivity.</p>
+{% endblock %}

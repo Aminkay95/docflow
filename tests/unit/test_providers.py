@@ -172,7 +172,7 @@ def test_live_provider_requires_explicit_recorder():
         DeepSeekProvider(settings)
     with pytest.raises(ValueError, match="live_provider_requires_recorder"):
         make_provider(settings)
-    assert make_provider(Settings()).name == "mock"
+    assert make_provider(Settings(provider="mock")).name == "mock"
 
 
 def test_remote_protocol_errors_retry_and_record():
@@ -206,3 +206,43 @@ def test_infinite_usage_is_a_recorded_sanitized_error():
     with pytest.raises(ProviderError, match="provider_response_error"):
         provider.text_reason(request())
     assert len(attempts) == 1 and attempts[0].status == "failed"
+
+
+def test_input_budget_and_truncated_output_fail_with_named_errors_before_promotion():
+    calls = []
+    provider = DeepSeekProvider(
+        Settings(
+            provider="deepseek",
+            deepseek_api_key="secret",
+            provider_max_estimated_input_tokens_per_page=1,
+        ),
+        recorder=lambda attempt: None,
+        client=httpx.Client(transport=httpx.MockTransport(lambda req: calls.append(req))),
+    )
+    with pytest.raises(ProviderError, match="provider_input_budget_exhausted"):
+        provider.text_reason(request())
+    assert not calls
+
+    attempts = []
+    provider = DeepSeekProvider(
+        Settings(provider="deepseek", deepseek_api_key="secret"),
+        recorder=attempts.append,
+        client=httpx.Client(
+            transport=httpx.MockTransport(
+                lambda req: httpx.Response(
+                    200,
+                    json={
+                        "choices": [
+                            {"message": {"content": '{"partial":'}, "finish_reason": "length"}
+                        ],
+                        "usage": {"prompt_tokens": 10, "completion_tokens": 4096},
+                    },
+                )
+            )
+        ),
+    )
+    with pytest.raises(ProviderError, match="provider_output_truncated"):
+        provider.text_reason(request())
+    assert attempts[0].status == "failed"
+    assert attempts[0].input_tokens == 10
+    assert attempts[0].output_tokens == 4096

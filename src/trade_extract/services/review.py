@@ -112,7 +112,19 @@ def resolve(
                     snapshot[section][field_path] = corrected_value
                     from trade_extract.schemas.registry import DOCUMENT_SCHEMAS
 
-                    DOCUMENT_SCHEMAS[document.document_type].model.model_validate(snapshot)
+                    model = DOCUMENT_SCHEMAS[document.document_type].model
+                    if set(model.field_set.required_scalar_paths) - set(snapshot["fields"]):
+                        from trade_extract.services.readers.base import partial_model
+
+                        partial_model(document.document_type).model_validate(snapshot)
+                        for path, value in snapshot["fields"].items():
+                            spec = model.field_set.resolve(path)
+                            if spec and spec.required and not value["value"].strip():
+                                raise invalid_request(
+                                    "corrected_value", "required fields must not be empty"
+                                )
+                    else:
+                        model.model_validate(snapshot)
                 except (ValidationError, KeyError) as exc:
                     raise invalid_request(
                         "corrected_value", "must satisfy the document schema"
@@ -206,3 +218,61 @@ def resolve(
     job.updated_at = now
     session.flush()
     return label
+
+
+def confirm_remaining(
+    session: Session, *, document_id: str, reviewer: Reviewer, now: datetime
+) -> int:
+    """Confirm eligible paths atomically; the caller commits the transaction once."""
+    if reviewer.role not in ("reviewer", "admin") or not reviewer.is_active:
+        raise DomainError("forbidden", "Read-only account.", http_status=403)
+    document = session.get(Document, document_id)
+    if document is None:
+        raise DomainError("document_not_found", "Document not found.", http_status=404)
+    session.execute(select(Job).where(Job.id == document.job_id).with_for_update()).one()
+    session.refresh(document)
+    item = session.scalar(
+        select(ReviewItem)
+        .where(
+            ReviewItem.document_id == document_id,
+            ReviewItem.track == "extraction",
+            ReviewItem.status.in_(("open", "in_progress")),
+        )
+        .with_for_update()
+        .execution_options(populate_existing=True)
+    )
+    if item is None:
+        if document.status == "resolved":
+            return 0
+        raise invalid_request("document_id", "document has no active extraction review")
+    if item.assigned_to not in (None, reviewer.id):
+        raise DomainError(
+            "review_stale", "Review is assigned to another reviewer.", http_status=409
+        )
+    fields = {
+        **(document.extraction or {}).get("fields", {}),
+        **(document.extraction or {}).get("extension", {}),
+    }
+    if not fields or document.status == "unreadable":
+        raise invalid_request("document_id", "confirm the explicit failure or unreadable outcome")
+    reviewed = set(
+        session.scalars(
+            select(ReviewResolution.field_path).where(
+                ReviewResolution.review_item_id == item.id,
+                ReviewResolution.outcome.in_(("confirmed", "corrected")),
+            )
+        )
+    )
+    remaining = sorted(set(fields) - reviewed)
+    for path in remaining:
+        resolve(
+            session,
+            item_id=item.id,
+            client_id=document.client_id,
+            reviewer=reviewer,
+            outcome="confirmed",
+            reason="Reviewed against source document.",
+            now=now,
+            field_path=path,
+        )
+    return len(remaining)

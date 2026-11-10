@@ -23,8 +23,12 @@ class InferenceRequest:
     evidence: str
     pages: tuple[PageImage, ...] = ()
     repair_errors: tuple[str, ...] = ()
-    previous_json: str | None = None
+    previous_json: str | dict[str, Any] | None = None
     segment_id: str | None = None
+    stage: str = "document"
+    page_count: int = 1
+    max_output_tokens: int | None = None
+    source_json: dict[str, Any] | None = None
 
 
 VisionRequest = InferenceRequest
@@ -39,6 +43,8 @@ class ProviderResult:
     output_tokens: int = 0
     cached_tokens: int = 0
     latency_ms: int = 0
+    finish_reason: str | None = None
+    repair_json: str | dict[str, Any] | None = None
 
 
 @dataclass(frozen=True)

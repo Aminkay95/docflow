@@ -533,7 +533,7 @@ async def spool_submission(
 
     assert collector is not None
     raw = RawSubmission(
-        job_ref=collector.fields.get("job_ref"),
+        job_ref=collector.fields.get("job_ref") or None,
         webhook_url=collector.fields.get("webhook_url"),
         documents=collector.documents,
         temp_dir=temp_dir,

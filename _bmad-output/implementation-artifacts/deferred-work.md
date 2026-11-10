@@ -109,3 +109,39 @@ source_spec: `2-page-model-and-always-on-segmentation.md`
 severity: low
 reason: `prepare_file.handle` calls `files_repo.get_for_update` before `_download_source` and `_render_and_store`, and the runner commits only after the handler returns. A large PDF at 300 DPI can therefore hold the lock and a pooled connection for minutes. Correctness is preserved (two deliveries cannot write two page sets) and the documented v1 deploy runs one worker, but throughput and connection-pool pressure need a later redesign — render outside the lock, then lock and re-check for an existing page set before writing.
 status: open
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-simplify-job-review-workspace.md`
+  summary: Make provider cost ceilings cumulative per page.
+  evidence: Existing DeepSeek._call compares every request independently with the full page ceiling; multiple reader, repair and retry requests can each pass.
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-simplify-job-review-workspace.md`
+  summary: Apply logical provider call budgets to every outbound HTTP attempt.
+  evidence: Existing _BudgetedProvider claims once per method invocation while DeepSeek._call retries internally.
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-simplify-job-review-workspace.md`
+  summary: Include repair and vision components in provider preflight token/cost estimates.
+  evidence: Existing estimates count prompt and evidence but omit previous_json, errors and image content transmitted in messages.
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-simplify-job-review-workspace.md`
+  summary: Remove provider HTTP response bodies from diagnostic logs.
+  evidence: Existing provider_http_error uses response.text[:1000] under error_detail, which JsonFormatter does not redact; error content can echo submitted data.
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-simplify-job-review-workspace.md`
+  summary: Align stripped local extraction text with character geometry offsets.
+  evidence: Existing evidence_lines strips text while retaining all characters; regex offsets can select the wrong span on indented lines.
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-simplify-job-review-workspace.md`
+  summary: Audit optional and indexed field coverage in the compact text-reader pipeline.
+  evidence: Unverified medium concern: compact_value_schema permits required scalar paths only and no indexed templates; trace separate staged table/optional paths with an end-to-end fixture.
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-simplify-job-review-workspace.md`
+  summary: Reject or retain conflicting duplicate paths returned by the compact text reader.
+  evidence: Existing TextLayerReader fields[path] assignment silently replaces earlier values for the same path.
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-simplify-job-review-workspace.md`
+  summary: Give provider truncation its intended bounded stage repair.
+  evidence: Existing extraction reader loop handles ProviderError by returning immediately, bypassing the validation repair branch.
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-simplify-job-review-workspace.md`
+  summary: Preserve completed table metadata when retaining partial extraction.
+  evidence: Existing retain_partial constructs tables={} and can lose metadata associated with retained indexed candidates.

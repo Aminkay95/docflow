@@ -15,6 +15,8 @@ _PLACEHOLDER_MARKERS = (
     "your-secret",
 )
 
+_DEFAULT_MAIL_FROM = "Trade Extract <no-reply@localhost>"
+
 
 class Settings(BaseSettings):
     """Environment-only process configuration.
@@ -43,6 +45,24 @@ class Settings(BaseSettings):
 
     base_url: str = "http://localhost:8000"
 
+    # Password reset delivery. Resend wins when RESEND_API_KEY is set, then
+    # SMTP when SMTP_HOST is set. With neither, the API writes messages to
+    # MAIL_OUTBOX_DIR instead of sending them (development only).
+    resend_api_key: SecretStr = SecretStr("")
+    resend_api_url: str = "https://api.resend.com/emails"
+    resend_from: str = ""
+    resend_timeout_seconds: float = Field(default=10, gt=0, le=60)
+    smtp_host: str = ""
+    smtp_port: int = Field(default=587, ge=1, le=65535)
+    smtp_username: str = ""
+    smtp_password: SecretStr = SecretStr("")
+    smtp_from: str = _DEFAULT_MAIL_FROM
+    smtp_starttls: bool = True
+    smtp_timeout_seconds: float = Field(default=10, gt=0, le=60)
+    mail_outbox_dir: Path = Path("./var/outbox")
+    password_reset_ttl_minutes: int = Field(default=30, ge=5, le=1440)
+    password_reset_min_length: int = Field(default=12, ge=8, le=128)
+
     provider: Literal["mock", "deepseek"] = "mock"
     deepseek_api_key: SecretStr = SecretStr("")
     deepseek_base_url: str = "https://api.deepseek.com"
@@ -51,8 +71,15 @@ class Settings(BaseSettings):
     provider_timeout_seconds: float = Field(default=60, gt=0, le=300)
     provider_connect_timeout_seconds: float = Field(default=5, gt=0, le=60)
     provider_max_attempts: int = Field(default=3, ge=1, le=5)
-    provider_max_repairs: int = Field(default=2, ge=0, le=2)
-    provider_max_output_tokens: int = Field(default=8_192, ge=1, le=8_192)
+    provider_max_repairs: int = Field(default=1, ge=0, le=2)
+    provider_max_output_tokens: int = Field(default=8_192, ge=1, le=65_536)
+    provider_max_evidence_characters_per_page: int = Field(default=24_000, ge=1, le=200_000)
+    provider_max_estimated_input_tokens_per_page: int = Field(default=12_000, ge=1)
+    provider_max_calls_per_page: int = Field(default=40, ge=1, le=200)
+    provider_cost_target_usd_per_page: float = Field(default=0.04, gt=0, le=1)
+    provider_cost_safety_ceiling_usd_per_page: float = Field(default=0.12, gt=0, le=2)
+    provider_input_price_usd_per_million: float = Field(default=0.66, ge=0, le=100)
+    provider_output_price_usd_per_million: float = Field(default=1.98, ge=0, le=100)
     provider_backoff_max_seconds: float = Field(default=30, gt=0, le=60)
     provider_max_images: int = Field(default=20, ge=1, le=100)
     provider_max_image_bytes: int = Field(default=20_000_000, ge=1, le=50_000_000)
@@ -111,6 +138,15 @@ class Settings(BaseSettings):
     conditioning_max_enlargement: float = Field(default=1, ge=1, le=2)
     segmentation_min_confidence: float = Field(default=0.55, ge=0.0, le=1.0)
 
+    # ICM stage-file pipeline: stage-01 LLM classify between prepare and extract,
+    # stage-02 type-file extraction contracts. Both default to legacy behavior.
+    llm_classification_enabled: bool = False
+    stage_prompts_enabled: bool = False
+    # LLM-primary extraction: always call the provider with the stage contract
+    # and document instead of taking the local-complete fast path. Local
+    # candidates still merge in as corroboration (agreement/disagreement).
+    llm_extraction_priority: bool = False
+
     task_stale_after_seconds: int = Field(default=900, ge=1)
     task_max_requeues: int = Field(default=3, ge=1)
     task_backoff_base_seconds: int = Field(default=2, ge=1)
@@ -132,6 +168,11 @@ class Settings(BaseSettings):
     def _resolve_limits_and_check_secrets(self) -> Settings:
         if self.conditioning_min_ink >= self.conditioning_max_ink:
             raise ValueError("CONDITIONING_MIN_INK must be below CONDITIONING_MAX_INK")
+        if self.provider_cost_safety_ceiling_usd_per_page < self.provider_cost_target_usd_per_page:
+            raise ValueError(
+                "PROVIDER_COST_SAFETY_CEILING_USD_PER_PAGE must be at least "
+                "PROVIDER_COST_TARGET_USD_PER_PAGE"
+            )
         if self.provider == "deepseek" and not self.deepseek_api_key.get_secret_value().strip():
             raise ValueError("DEEPSEEK_API_KEY is required when PROVIDER=deepseek")
         if not self.deepseek_base_url.startswith("https://"):
@@ -143,9 +184,19 @@ class Settings(BaseSettings):
             raise ValueError("MAX_REQUEST_BYTES must exceed MAX_FILE_BYTES")
         if self.max_pages_per_submission < self.max_pages_per_file:
             raise ValueError("MAX_PAGES_PER_SUBMISSION must be at least MAX_PAGES_PER_FILE")
+        if self.resend_api_key.get_secret_value().strip() and self.mail_from == _DEFAULT_MAIL_FROM:
+            raise ValueError(
+                "RESEND_FROM is required when RESEND_API_KEY is set; use an address on a "
+                "domain verified in Resend"
+            )
         if self.environment == "production":
             _reject_placeholder("SECRET_KEY", self.secret_key)
             _reject_placeholder("API_KEY_PEPPER", self.api_key_pepper)
+            if not (self.resend_api_key.get_secret_value().strip() or self.smtp_host.strip()):
+                raise ValueError(
+                    "RESEND_API_KEY or SMTP_HOST is required in production so password "
+                    "reset emails can be delivered"
+                )
             if self.webhook_allow_private_targets:
                 raise ValueError(
                     "WEBHOOK_ALLOW_PRIVATE_TARGETS is not permitted in production; "
@@ -154,6 +205,12 @@ class Settings(BaseSettings):
             if self.storage_backend == "s3" and not self.s3_bucket:
                 raise ValueError("S3_BUCKET is required when STORAGE_BACKEND=s3")
         return self
+
+    @property
+    def mail_from(self) -> str:
+        """Sender address shared by Resend and SMTP."""
+
+        return self.resend_from.strip() or self.smtp_from
 
     @property
     def allowed_content_types(self) -> list[str]:

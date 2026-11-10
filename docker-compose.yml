@@ -1,11 +1,31 @@
 x-app-env: &app-env
   ENVIRONMENT: ${ENVIRONMENT:-development}
-  DATABASE_URL: ${DATABASE_URL:-postgresql+psycopg://trade:trade@postgres:5432/trade_extract}
+  # DATABASE_URL in .env is host-facing (localhost:5432/5434) and is consumed by
+  # host-side tools such as alembic and pytest. Containers must use the compose
+  # network name instead, because localhost inside a container is the container
+  # itself. Override with DOCKER_DATABASE_URL when containers need another host.
+  DATABASE_URL: ${DOCKER_DATABASE_URL:-postgresql+psycopg://trade:trade@postgres:5432/trade_extract}
   SECRET_KEY: ${SECRET_KEY:-development-only-secret}
   API_KEY_PEPPER: ${API_KEY_PEPPER:-development-only-pepper}
   STORAGE_BACKEND: filesystem
   STORAGE_DIR: /app/var/storage
-  BASE_URL: ${BASE_URL:-http://localhost:8000}
+  # Same reasoning as DATABASE_URL: .env carries the host-facing public base.
+  BASE_URL: ${DOCKER_BASE_URL:-http://localhost:8000}
+  # Password reset delivery. Resend takes precedence when RESEND_API_KEY is set.
+  # Empty RESEND_API_KEY and SMTP_HOST writes .eml files to the outbox.
+  RESEND_API_KEY: ${RESEND_API_KEY:-}
+  RESEND_FROM: ${RESEND_FROM:-}
+  RESEND_API_URL: ${RESEND_API_URL:-https://api.resend.com/emails}
+  RESEND_TIMEOUT_SECONDS: ${RESEND_TIMEOUT_SECONDS:-10}
+  SMTP_HOST: ${SMTP_HOST:-}
+  SMTP_PORT: ${SMTP_PORT:-587}
+  SMTP_USERNAME: ${SMTP_USERNAME:-}
+  SMTP_PASSWORD: ${SMTP_PASSWORD:-}
+  SMTP_FROM: "${SMTP_FROM:-Trade Extract <no-reply@localhost>}"
+  SMTP_STARTTLS: ${SMTP_STARTTLS:-true}
+  MAIL_OUTBOX_DIR: /app/var/outbox
+  PASSWORD_RESET_TTL_MINUTES: ${PASSWORD_RESET_TTL_MINUTES:-30}
+  PASSWORD_RESET_MIN_LENGTH: ${PASSWORD_RESET_MIN_LENGTH:-12}
   MAX_DOCUMENTS_PER_GROUP: ${MAX_DOCUMENTS_PER_GROUP:-20}
   MAX_FILE_BYTES: ${MAX_FILE_BYTES:-26214400}
   MAX_PAGES_PER_FILE: ${MAX_PAGES_PER_FILE:-500}
@@ -54,11 +74,44 @@ services:
     build:
       context: .
       dockerfile: Dockerfile.api
-    environment: *app-env
+    environment:
+      <<: *app-env
+      # Polling makes watchfiles reliable with Docker Desktop bind mounts on Windows.
+      WATCHFILES_FORCE_POLLING: "${WATCHFILES_FORCE_POLLING:-true}"
+    command:
+      [
+        "uvicorn",
+        "trade_extract.api.app:create_app",
+        "--factory",
+        "--host",
+        "0.0.0.0",
+        "--port",
+        "8000",
+        "--reload",
+        "--reload-dir",
+        "/app/src",
+      ]
     ports:
       - "8000:8000"
     volumes:
       - storage:/app/var/storage
+      # Reset emails land here when SMTP_HOST is empty (local development).
+      - ./var/outbox:/app/var/outbox
+    develop:
+      watch:
+        # `docker compose up --watch` syncs source into the container; uvicorn
+        # reloads Python, and Jinja/static files are read on each request.
+        - action: sync
+          path: ./src
+          target: /app/src
+          ignore:
+            - "**/__pycache__/**"
+        - action: rebuild
+          path: pyproject.toml
+        - action: rebuild
+          path: uv.lock
+        - action: rebuild
+          path: Dockerfile.api
     depends_on:
       postgres:
         condition: service_healthy
@@ -88,7 +141,13 @@ services:
       DEEPSEEK_BASE_URL: ${DEEPSEEK_BASE_URL:-https://api.deepseek.com}
       DEEPSEEK_VISION_MODEL: ${DEEPSEEK_VISION_MODEL:-deepseek-flash}
       DEEPSEEK_TEXT_MODEL: ${DEEPSEEK_TEXT_MODEL:-deepseek-v4-pro}
+      PROVIDER_MAX_REPAIRS: ${PROVIDER_MAX_REPAIRS:-1}
       PROVIDER_MAX_OUTPUT_TOKENS: ${PROVIDER_MAX_OUTPUT_TOKENS:-8192}
+      PROVIDER_MAX_EVIDENCE_CHARACTERS_PER_PAGE: ${PROVIDER_MAX_EVIDENCE_CHARACTERS_PER_PAGE:-24000}
+      PROVIDER_MAX_ESTIMATED_INPUT_TOKENS_PER_PAGE: ${PROVIDER_MAX_ESTIMATED_INPUT_TOKENS_PER_PAGE:-12000}
+      PROVIDER_MAX_CALLS_PER_PAGE: ${PROVIDER_MAX_CALLS_PER_PAGE:-40}
+      PROVIDER_COST_TARGET_USD_PER_PAGE: ${PROVIDER_COST_TARGET_USD_PER_PAGE:-0.04}
+      PROVIDER_COST_SAFETY_CEILING_USD_PER_PAGE: ${PROVIDER_COST_SAFETY_CEILING_USD_PER_PAGE:-0.12}
       OCR_DETECTION_MODEL: ${OCR_DETECTION_MODEL:-PP-OCRv5_mobile_det}
       OCR_RECOGNITION_MODEL: ${OCR_RECOGNITION_MODEL:-PP-OCRv5_mobile_rec}
       TABLE_WIRED_STRUCTURE_MODEL: ${TABLE_WIRED_STRUCTURE_MODEL:-SLANet_plus}
@@ -102,6 +161,21 @@ services:
     volumes:
       - storage:/app/var/storage
       - paddlex_cache:/home/appuser/.paddlex
+    develop:
+      watch:
+        # Restart the worker when its code changes; in-flight tasks are requeued
+        # by the stale-task sweeper.
+        - action: sync+restart
+          path: ./src
+          target: /app/src
+          ignore:
+            - "**/__pycache__/**"
+        - action: rebuild
+          path: pyproject.toml
+        - action: rebuild
+          path: uv.lock
+        - action: rebuild
+          path: Dockerfile.worker
     depends_on:
       postgres:
         condition: service_healthy
@@ -121,6 +195,19 @@ services:
     environment: *app-env
     volumes:
       - storage:/app/var/storage
+    develop:
+      watch:
+        - action: sync+restart
+          path: ./src
+          target: /app/src
+          ignore:
+            - "**/__pycache__/**"
+        - action: rebuild
+          path: pyproject.toml
+        - action: rebuild
+          path: uv.lock
+        - action: rebuild
+          path: Dockerfile.worker
     depends_on:
       postgres:
         condition: service_healthy

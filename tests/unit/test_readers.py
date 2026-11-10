@@ -74,7 +74,6 @@ def test_numeric_span_cannot_end_inside_a_larger_amount():
 
 
 def test_direct_text_reader_excludes_conditioning_refusals():
-    import json
 
     from trade_extract.domain.inference import InferenceRequest, ProviderResult
     from trade_extract.providers.mock import MockProvider
@@ -94,7 +93,9 @@ def test_direct_text_reader_excludes_conditioning_refusals():
     assert reader.read(provider, request, (bad,)) is None
     assert not provider.requests
     reader.read(provider, request, (good, bad))
-    evidence = json.loads(provider.requests[0].evidence.split("Text geometry:\n")[1])
-    assert [entry["page_index"] for entry in evidence] == [0]
-    assert evidence[0]["characters"][0]["text"] == "GOOD"
+    evidence = provider.requests[0].evidence.split(
+        "Evidence lines (id|page|normalized bbox|text):\n"
+    )[1]
+    assert "|p=0|" in evidence
+    assert evidence.endswith("|GOOD")
     assert "REFUSED" not in provider.requests[0].evidence

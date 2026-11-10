@@ -1,0 +1,167 @@
+{% extends "base.html" %}
+{% from "partials/icon.html" import icon %}
+{% block actions %}
+{% if job %}<a class="btn btn-secondary btn-sm" href="/review/jobs/{{ job.id }}">{{ icon('arrow-left', 14) }}<span>Back to job</span></a>{% endif %}
+{% endblock %}
+{% block content %}
+<section class="job-summary">
+  <div class="job-summary-main">
+    <span class="job-summary-icon" aria-hidden="true">{{ icon('file-text', 20) }}</span>
+    <div class="job-summary-copy">
+      <div class="job-title-row">
+        <h2>{{ document.document_type | humanize }}</h2>
+        <span class="badge badge-{{ document.status | badge }}">{{ document.status | humanize }}</span>
+      </div>
+      <p class="job-summary-meta">
+        <span>{{ client.name if client else 'Unknown client' }}</span>
+        <span class="meta-sep" aria-hidden="true">·</span>
+        <span>{{ document.job_ref or document.job_id }}</span>
+        <span class="meta-sep" aria-hidden="true">·</span>
+        <span class="mono">{{ document.document_id }}</span>
+      </p>
+    </div>
+  </div>
+  <dl class="summary-meta">
+    <div><dt>Pages</dt><dd>{{ document.source.page_start + 1 }}–{{ document.source.page_end + 1 }}</dd></div>
+    <div><dt>Fields</dt><dd>{{ display_fields | length }}</dd></div>
+    <div><dt>Decision</dt><dd>{{ (document.decision.value if document.decision else 'Pending') | humanize }}</dd></div>
+    <div><dt>Review item</dt><dd class="mono">{{ item.id if item else 'Closed' }}</dd></div>
+  </dl>
+</section>
+
+<div class="notice notice-info">
+  {{ icon('shield-check', 16) }}
+  <p>Original values and evidence remain unchanged. Human corrections are recorded separately as overlays.</p>
+</div>
+
+<div class="workspace">
+  <section class="card source-panel">
+    <header class="card-header">
+      <div><h2 class="card-title">Source pages</h2><p class="card-subtitle">Click or focus a field to highlight its evidence.</p></div>
+      <a class="btn btn-ghost btn-sm" href="/review/media/documents/{{ document.document_id }}/source" target="_blank" rel="noopener" title="Open the uploaded document in a new tab">{{ icon('external-link', 14) }}<span>Open original</span></a>
+    </header>
+    <div class="card-body source-pages">
+      {% for page in range(document.source.page_start, document.source.page_end + 1) %}
+      <figure class="page" id="page-{{ page }}">
+        <div class="page-image">
+          <img loading="lazy" alt="Conditioned source page {{ page + 1 }}" src="/review/media/documents/{{ document.document_id }}/pages/{{ page }}">
+          <div class="bbox" hidden></div>
+        </div>
+        <p class="media-error" data-media-error hidden>{{ icon('image-off', 16) }} Source image unavailable or expired. Values and review actions remain available.</p>
+        <figcaption class="page-caption">Page {{ page + 1 }}</figcaption>
+      </figure>
+      {% endfor %}
+    </div>
+  </section>
+
+  <section class="fields-panel">
+    <div class="card">
+      <header class="card-header">
+        <div><h2 class="card-title">Extracted fields</h2><p class="card-subtitle">Confirm or correct each value against the source.</p></div>
+        <span class="badge badge-neutral">{{ display_fields | length }} field{{ '' if display_fields | length == 1 else 's' }}</span>
+      </header>
+      <div class="card-body field-list">
+        {% set reviewed = labels | map(attribute='field_path') | list %}
+        {% for path, field in display_fields.items() %}
+        <article class="field-card" tabindex="0" data-page="{{ field.provenance.page_index }}" data-box='{{ boxes.get(path) | tojson }}'>
+          <div class="field-head">
+            <p class="mono field-path">{{ path }}</p>
+            {% if field.agreement %}<span class="chip">{{ field.agreement | humanize }}</span>{% endif %}
+          </div>
+          <p class="field-value">{{ field.value }}</p>
+          <p class="field-provenance">{{ icon('file-text', 12) }} Page {{ field.provenance.page_index + 1 }} · {{ field.provenance.reader }}</p>
+          {% if path in document.corrections %}
+          <p class="correction">Human correction: {{ document.corrections[path].value }}</p>
+          {% endif %}
+          {% if path in reviewed %}
+          <p class="resolved-note">{{ icon('check', 12) }} Resolution recorded.</p>
+          {% elif item and not read_only %}
+          <form class="resolve-form" data-resolve="/review/queues/{{ item.id }}/resolve" data-field='{{ field | tojson }}'>
+            <input type="hidden" name="field_path" value="{{ path }}">
+            <div class="form-row">
+              <label class="field">
+                <span class="field-label">Outcome</span>
+                <div class="select-field">
+                  {{ icon('check', 14, 'select-field-icon') }}
+                  <select name="outcome"><option value="confirmed">Confirm</option><option value="corrected">Correct</option></select>
+                </div>
+              </label>
+              <label class="field">
+                <span class="field-label">Corrected value</span>
+                <input name="value" value="{{ field.value }}">
+              </label>
+            </div>
+            <label class="field">
+              <span class="field-label">Reason</span>
+              <textarea name="reason" required minlength="4" maxlength="4000" placeholder="What did you check against the source?"></textarea>
+            </label>
+            <div class="form-actions"><button class="btn btn-primary btn-sm" type="submit" data-busy-label="Saving…">{{ icon('check', 14) }}<span>Record field resolution</span></button></div>
+          </form>
+          {% endif %}
+        </article>
+        {% else %}
+        <div class="empty compact">
+          <span class="empty-icon">{{ icon('file-search', 18) }}</span>
+          <p class="empty-title">No fields were emitted</p>
+          <p class="empty-copy">Review the retained failure or unreadable outcome below.</p>
+        </div>
+        {% endfor %}
+      </div>
+    </div>
+
+    {% if item and not read_only and (document.status == 'unreadable' or not display_fields) %}
+    <div class="card">
+      <header class="card-header"><div><h2 class="card-title">Close this review</h2><p class="card-subtitle">Confirm the retained outcome so the job can complete.</p></div></header>
+      <div class="card-body">
+        <form class="resolve-form" data-resolve="/review/queues/{{ item.id }}/resolve">
+          <input name="outcome" type="hidden" value="{{ 'unreadable_confirmed' if document.status == 'unreadable' else 'failure_confirmed' }}">
+          <label class="field">
+            <span class="field-label">Reason</span>
+            <textarea name="reason" required minlength="4" maxlength="4000" placeholder="Describe what you observed."></textarea>
+          </label>
+          <div class="form-actions"><button class="btn btn-primary btn-sm" type="submit" data-busy-label="Saving…">{{ icon('check', 14) }}<span>Confirm {{ 'unreadable' if document.status == 'unreadable' else 'failed extraction' }} outcome</span></button></div>
+        </form>
+      </div>
+    </div>
+    {% endif %}
+
+    <div class="card">
+      <header class="card-header"><div><h2 class="card-title">Checks and diagnostics</h2><p class="card-subtitle">Read-only evidence retained with this document.</p></div></header>
+      <div class="card-body stack">
+        <details class="disclosure">
+          <summary>Checks</summary>
+          <pre>{{ document.checks | tojson(indent=2) }}</pre>
+        </details>
+        <details class="disclosure">
+          <summary>Decision</summary>
+          <pre>{{ document.decision | tojson(indent=2) }}</pre>
+        </details>
+      </div>
+    </div>
+
+    <div class="card">
+      <header class="card-header"><div><h2 class="card-title">Resolution history</h2><p class="card-subtitle">Every label recorded for this document.</p></div></header>
+      {% if labels %}
+      <ul class="timeline">
+        {% for label in labels %}
+        <li class="timeline-item">
+          <span class="timeline-dot" aria-hidden="true"></span>
+          <div class="timeline-body">
+            <p class="timeline-line"><span class="mono">{{ label.field_path }}</span><span class="badge badge-{{ label.outcome | badge }}">{{ label.outcome | humanize }}</span></p>
+            <p class="text-muted">{{ label.reason }}</p>
+            <small class="text-muted">{{ label.reviewer_name }} ({{ label.reviewer_id }}) · {{ label.created_at | when }}</small>
+          </div>
+        </li>
+        {% endfor %}
+      </ul>
+      {% else %}
+      <div class="empty compact">
+        <span class="empty-icon">{{ icon('activity', 18) }}</span>
+        <p class="empty-title">No resolutions recorded</p>
+        <p class="empty-copy">Decisions will appear here as reviewers work through the fields.</p>
+      </div>
+      {% endif %}
+    </div>
+  </section>
+</div>
+{% endblock %}

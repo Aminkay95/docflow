@@ -1,0 +1,123 @@
+{% extends "base.html" %}
+{% from "partials/icon.html" import icon %}
+{% block actions %}
+{% if job %}<a class="btn btn-secondary btn-sm" href="/review/jobs/{{ job.id }}">{{ icon('arrow-left', 14) }}<span>Back to job</span></a>{% endif %}
+{% endblock %}
+{% block content %}
+<section class="job-summary">
+  <div class="job-summary-main">
+    <span class="job-summary-icon job-summary-icon-warning" aria-hidden="true">{{ icon('triangle-alert', 20) }}</span>
+    <div class="job-summary-copy">
+      <div class="job-title-row">
+        <h2>{{ conflict.field_label }}</h2>
+        <span class="badge badge-{{ conflict.status | badge }}">{{ conflict.status | humanize }}</span>
+      </div>
+      <p class="job-summary-meta">
+        <span>{{ client.name if client else 'Unknown client' }}</span>
+        <span class="meta-sep" aria-hidden="true">·</span>
+        <span>{{ job.job_ref if job and job.job_ref else (job.id if job else '') }}</span>
+        <span class="meta-sep" aria-hidden="true">·</span>
+        <span class="mono">{{ conflict.fingerprint }}</span>
+      </p>
+    </div>
+  </div>
+  <dl class="summary-meta">
+    <div><dt>Sources</dt><dd>{{ conflict.sources | length }}</dd></div>
+    <div><dt>Review item</dt><dd class="mono">{{ item.id if item else 'Closed' }}</dd></div>
+    <div><dt>Field key</dt><dd class="mono">{{ conflict.canonical_key if conflict.canonical_key else '—' }}</dd></div>
+  </dl>
+</section>
+
+<div class="notice notice-warning">
+  {{ icon('info', 16) }}
+  <p>Source values remain unchanged. The decision below is recorded as an overlay against the conflicting documents.</p>
+</div>
+
+<div class="source-grid">
+  {% for source in conflict.sources %}
+  <article class="card source-card">
+    <header class="card-header">
+      <div>
+        <h2 class="card-title">{{ source.document_type | humanize }}</h2>
+        <p class="card-subtitle mono">{{ source.document_id }}</p>
+      </div>
+      <a class="btn btn-secondary btn-sm" href="/review/documents/{{ source.document_id }}">{{ icon('eye', 14) }}<span>Open document</span></a>
+    </header>
+    <div class="card-body">
+      <p class="stat-label">Stated value</p>
+      <p class="source-value">{{ source.stated_value }}</p>
+      {% if source.comparison_reason %}<p class="text-muted">{{ source.comparison_reason }}</p>{% endif %}
+      <details class="disclosure">
+        <summary>Provenance</summary>
+        <pre>{{ source.provenance | tojson(indent=2) }}</pre>
+      </details>
+    </div>
+  </article>
+  {% endfor %}
+</div>
+
+{% if item and not read_only %}
+<section class="card">
+  <header class="card-header"><div><h2 class="card-title">Record decision</h2><p class="card-subtitle">Choose how this discrepancy should be handled.</p></div></header>
+  <div class="card-body">
+    <form class="resolve-form" data-resolve="/review/queues/{{ item.id }}/resolve">
+      <input type="hidden" name="expected_fingerprint" value="{{ conflict.fingerprint }}">
+      <div class="form-row">
+        <label class="field">
+          <span class="field-label">Outcome</span>
+          <div class="select-field">
+            {{ icon('check-check', 14, 'select-field-icon') }}
+            <select name="outcome">
+              <option value="accepted">Accept named source</option>
+              <option value="waived">Waive discrepancy</option>
+              <option value="client_notified">Client notified — keep open</option>
+            </select>
+          </div>
+        </label>
+        <label class="field">
+          <span class="field-label">Source</span>
+          <div class="select-field">
+            {{ icon('file-text', 14, 'select-field-icon') }}
+            <select name="chosen_document_id">
+              {% for source in conflict.sources %}<option value="{{ source.document_id }}">{{ source.document_id }}</option>{% endfor %}
+            </select>
+          </div>
+        </label>
+      </div>
+      <label class="field">
+        <span class="field-label">Reason</span>
+        <textarea name="reason" required minlength="4" maxlength="4000" placeholder="Record the client's decision and any context."></textarea>
+      </label>
+      <div class="form-actions"><button class="btn btn-primary btn-sm" type="submit" data-busy-label="Saving…">{{ icon('check', 14) }}<span>Record client decision</span></button></div>
+    </form>
+  </div>
+</section>
+{% endif %}
+
+<section class="card">
+  <header class="card-header"><div><h2 class="card-title">Resolution history</h2><p class="card-subtitle">Every decision recorded for this conflict.</p></div></header>
+  {% if labels %}
+  <ul class="timeline">
+    {% for label in labels %}
+    <li class="timeline-item">
+      <span class="timeline-dot" aria-hidden="true"></span>
+      <div class="timeline-body">
+        <p class="timeline-line">
+          <span class="badge badge-{{ label.outcome | badge }}">{{ label.outcome | humanize }}</span>
+          {% if label.chosen_document_id %}<span class="text-muted">Selected</span><span class="mono">{{ label.chosen_document_id }}</span>{% endif %}
+        </p>
+        <p class="text-muted">{{ label.reason }}</p>
+        <small class="text-muted">{{ label.reviewer_name }} ({{ label.reviewer_id }}) · {{ label.created_at | when }}</small>
+      </div>
+    </li>
+    {% endfor %}
+  </ul>
+  {% else %}
+  <div class="empty compact">
+    <span class="empty-icon">{{ icon('activity', 18) }}</span>
+    <p class="empty-title">No resolutions recorded</p>
+    <p class="empty-copy">Client decisions will appear here once recorded.</p>
+  </div>
+  {% endif %}
+</section>
+{% endblock %}

@@ -90,7 +90,8 @@ def detect_conflicts(
     drafts = []
     for key, sources in sorted(grouped.items()):
         if key.startswith("customs.") and {s["document_type"] for s in sources} != {
-            "commercial_invoice", "custom_entry"
+            "commercial_invoice",
+            "custom_entry",
         }:
             continue
         by_doc: dict[str, list[dict[str, Any]]] = defaultdict(list)

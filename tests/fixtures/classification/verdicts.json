@@ -1,0 +1,130 @@
+{
+  "inv-01": {
+    "document_type": "commercial_invoice",
+    "confidence": 0.96,
+    "reason": "title COMMERCIAL INVOICE with Invoice No row",
+    "input_tokens": 1180,
+    "output_tokens": 42,
+    "cached_tokens": 0
+  },
+  "inv-02": {
+    "document_type": "commercial_invoice",
+    "confidence": 0.93,
+    "reason": "title TAX INVOICE with Amount Due row",
+    "input_tokens": 1150,
+    "output_tokens": 40,
+    "cached_tokens": 0
+  },
+  "inv-03": {
+    "document_type": "commercial_invoice",
+    "confidence": 0.88,
+    "reason": "bare INVOICE title with Total Payable row",
+    "input_tokens": 1102,
+    "output_tokens": 38,
+    "cached_tokens": 512
+  },
+  "pro-01": {
+    "document_type": "proforma_invoice",
+    "confidence": 0.97,
+    "reason": "title PROFORMA INVOICE with Valid until row",
+    "input_tokens": 1174,
+    "output_tokens": 41,
+    "cached_tokens": 512
+  },
+  "pro-02": {
+    "document_type": "proforma_invoice",
+    "confidence": 0.9,
+    "reason": "title PROFORMA with Valid until date",
+    "input_tokens": 1096,
+    "output_tokens": 37,
+    "cached_tokens": 0
+  },
+  "bol-01": {
+    "document_type": "bill_of_lading",
+    "confidence": 0.98,
+    "reason": "title BILL OF LADING with Shipper and Port of Loading rows",
+    "input_tokens": 1245,
+    "output_tokens": 45,
+    "cached_tokens": 512
+  },
+  "bol-02": {
+    "document_type": "bill_of_lading",
+    "confidence": 0.94,
+    "reason": "title SEA WAYBILL with Shipper and Notify Party rows",
+    "input_tokens": 1188,
+    "output_tokens": 42,
+    "cached_tokens": 0
+  },
+  "do-01": {
+    "document_type": "delivery_order",
+    "confidence": 0.95,
+    "reason": "title DELIVERY ORDER with release reference and Free time",
+    "input_tokens": 1163,
+    "output_tokens": 40,
+    "cached_tokens": 512
+  },
+  "pass-01": {
+    "document_type": "port_pass",
+    "confidence": 0.92,
+    "reason": "title PORT PASS with Vehicle and Driver rows",
+    "input_tokens": 1087,
+    "output_tokens": 36,
+    "cached_tokens": 0
+  },
+  "ce-01": {
+    "document_type": "custom_entry",
+    "confidence": 0.93,
+    "reason": "title CUSTOMS DECLARATION with Entry No and HS Code rows",
+    "input_tokens": 1171,
+    "output_tokens": 41,
+    "cached_tokens": 0
+  },
+  "memo-01": {
+    "document_type": "verification_memo",
+    "confidence": 0.95,
+    "reason": "title VERIFICATION MEMO with Seal intact and Findings rows",
+    "input_tokens": 1142,
+    "output_tokens": 39,
+    "cached_tokens": 512
+  },
+  "pack-01": {
+    "document_type": "unknown",
+    "confidence": 0.91,
+    "reason": "PACKING LIST heading, which is not a registered extraction type",
+    "input_tokens": 1064,
+    "output_tokens": 35,
+    "cached_tokens": 0
+  },
+  "unk-01": {
+    "document_type": "unknown",
+    "confidence": 0.87,
+    "reason": "MEETING MINUTES heading, no trade document signals",
+    "input_tokens": 1031,
+    "output_tokens": 33,
+    "cached_tokens": 0
+  },
+  "unk-02": {
+    "document_type": "unknown",
+    "confidence": 0.62,
+    "reason": "WAREHOUSE RECEIPT heading, closest match is not in the closed list",
+    "input_tokens": 1019,
+    "output_tokens": 32,
+    "cached_tokens": 0
+  },
+  "edge-tie-01": {
+    "document_type": "unknown",
+    "confidence": 0.45,
+    "reason": "DELIVERY ORDER and PORT PASS headings carry equal weight, no dominant type",
+    "input_tokens": 1044,
+    "output_tokens": 34,
+    "cached_tokens": 0
+  },
+  "edge-noisy-01": {
+    "document_type": "commercial_invoice",
+    "confidence": 0.91,
+    "reason": "INVOICE title with Unit Price and Amount Due rows",
+    "input_tokens": 1137,
+    "output_tokens": 39,
+    "cached_tokens": 512
+  }
+}

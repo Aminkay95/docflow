@@ -1,0 +1,43 @@
+{% extends "base.html" %}
+{% from "partials/icon.html" import icon %}
+{% block content %}
+<section class="chip-row" aria-label="Decision totals">
+  {% for outcome, total in outcomes.items() %}
+  <span class="badge badge-{{ outcome | badge }}">{{ outcome | humanize }} <span class="badge-count">{{ total }}</span></span>
+  {% endfor %}
+</section>
+
+<section class="card">
+  <header class="card-header">
+    <div><h2 class="card-title">Decision log</h2><p class="card-subtitle">The 100 most recent review decisions.</p></div>
+  </header>
+  {% if rows %}
+  <ul class="timeline">
+    {% for label, reviewer_name, item, job_ref in rows %}
+    <li class="timeline-item">
+      <span class="timeline-dot" aria-hidden="true"></span>
+      <div class="timeline-body">
+        <p class="timeline-line">
+          <strong>{{ reviewer_name }}</strong>
+          <span class="text-muted">recorded</span>
+          <span class="badge badge-{{ label.outcome | badge }}">{{ label.outcome | humanize }}</span>
+          {% if label.field_path %}<span class="mono text-muted">{{ label.field_path }}</span>{% endif %}
+        </p>
+        <p class="text-muted">{{ label.reason }}</p>
+      </div>
+      <div class="timeline-meta">
+        <a href="{{ '/review/documents/' ~ item.document_id if item.document_id else '/review/conflicts/' ~ item.conflict_id }}">{{ job_ref or 'View item' }}</a>
+        <small>{{ label.created_at | when }}</small>
+      </div>
+    </li>
+    {% endfor %}
+  </ul>
+  {% else %}
+  <div class="empty">
+    <span class="empty-icon">{{ icon('activity', 20) }}</span>
+    <p class="empty-title">No decisions yet</p>
+    <p class="empty-copy">Resolved review items will be logged here.</p>
+  </div>
+  {% endif %}
+</section>
+{% endblock %}

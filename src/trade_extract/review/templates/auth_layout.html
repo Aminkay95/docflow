@@ -1,0 +1,36 @@
+{% from "partials/icon.html" import icon %}
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light">
+<title>{{ title }} · Trade Extract</title>
+<link rel="stylesheet" href="/review/static/review.css">
+</head>
+<body class="login-body login-body-split">
+{% include "partials/icons.html" %}
+<main class="login-split">
+  <section class="login-panel">
+    <div class="login-panel-inner">
+      <a class="login-brand" href="/review" title="Trade Extract">
+        <span class="brand-mark" aria-hidden="true">{{ icon('file-text', 16) }}</span>
+        <span class="brand-copy">
+          <span class="brand-title">Trade Extract</span>
+          <span class="brand-subtitle">Review console</span>
+        </span>
+      </a>
+      {% block auth_content %}{% endblock %}
+    </div>
+  </section>
+  <aside class="login-visual">
+    <img class="login-visual-image" src="/review/static/login-visual.svg" alt="" width="900" height="1200" fetchpriority="high">
+    <div class="login-visual-note">
+      <p class="login-visual-kicker">Provenance-first review</p>
+      <p class="login-visual-copy">Every extracted value stays linked to the page it came from.</p>
+    </div>
+  </aside>
+</main>
+<script src="/review/static/login.js" defer></script>
+</body>
+</html>

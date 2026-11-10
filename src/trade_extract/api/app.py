@@ -7,6 +7,7 @@ from pathlib import Path
 from threading import Lock
 
 from fastapi import FastAPI, Request
+from fastapi.responses import RedirectResponse
 from fastapi.staticfiles import StaticFiles
 
 from trade_extract.api import openapi as openapi_module
@@ -55,6 +56,8 @@ def create_app(
     app.state.clock = process_clock
     app.state.review_login_attempts = defaultdict(deque)
     app.state.review_login_lock = Lock()
+    app.state.review_reset_attempts = defaultdict(deque)
+    app.state.review_reset_lock = Lock()
 
     app.add_middleware(RequestContextMiddleware)
     register_exception_handlers(app)
@@ -70,6 +73,15 @@ def create_app(
         StaticFiles(directory=str(Path(__file__).parents[1] / "review" / "static")),
         name="review-static",
     )
+
+    @app.get("/", include_in_schema=False)
+    def home(request: Request) -> RedirectResponse:
+        try:
+            signer(request).loads(request.cookies.get("review_session", ""), max_age=28800)
+            target = "/review"
+        except Exception:
+            target = "/review/login"
+        return RedirectResponse(target, status_code=303)
 
     @app.middleware("http")
     async def review_security(request: Request, call_next):

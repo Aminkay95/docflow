@@ -1049,3 +1049,13 @@ status and independent queue counts. New trust identities are full-review, corre
 is scoped to the exact identity, and v1 has no promotion path. Source expiry cannot delete the
 retained evidence used by later submissions. See docs/03–06 for the runtime boundaries and the
 explicit decision to retain existing local schema paths.
+
+## Local-first extraction budget
+
+Before semantic inference, construct stable evidence lines and run conservative label/geometry
+rules. Remove verified local scalar paths from the provider JSON Schema, send the compact evidence
+index once, and repair only the failed unresolved stage. Enforce the configured evidence-character,
+estimated-input-token, output-token, call-count and cost safety limits before dispatch. Persist
+actual usage in the existing provider ledger. The release gate is a labelled-corpus average at or
+below USD 0.04/page, at least 95% exact critical-scalar accuracy, 90% table-cell accuracy and p95
+below 90 seconds/page.

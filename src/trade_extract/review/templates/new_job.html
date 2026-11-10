@@ -1,0 +1,109 @@
+{% extends "base.html" %}
+{% from "partials/icon.html" import icon %}
+{% block actions %}
+<a class="btn btn-secondary btn-sm" href="/review/jobs">{{ icon('arrow-left', 14) }}<span>Back to jobs</span></a>
+{% endblock %}
+{% block content %}
+<div class="create-layout">
+  <section class="card">
+    <header class="card-header">
+      <div>
+        <h2 class="card-title">New extraction job</h2>
+        <p class="card-subtitle">Upload documents and run them through the full extraction pipeline.</p>
+      </div>
+    </header>
+    <div class="card-body">
+      {% if clients %}
+      <form class="client-picker" method="get" action="/review/jobs/new">
+        <label class="field">
+          <span class="field-label">Client</span>
+          <div class="select-field select-field-wide">
+            {{ icon('building-2', 14, 'select-field-icon') }}
+            <select name="client_id" data-client-picker>
+              {% for option in clients %}
+              <option value="{{ option.id }}" {{ 'selected' if selected_client and selected_client.id == option.id else '' }}>{{ option.name }}</option>
+              {% endfor %}
+            </select>
+          </div>
+        </label>
+        <noscript><button class="btn btn-secondary btn-sm" type="submit">Select client</button></noscript>
+      </form>
+      {% elif clients_unavailable %}
+      <div class="notice notice-warning">
+        {{ icon('circle-alert', 16) }}
+        <p>No active clients are available. Activate a client before creating a job.</p>
+      </div>
+      {% else %}
+      <div class="notice notice-info">
+        {{ icon('info', 16) }}
+        <p>No clients exist yet. Your first upload automatically creates an <strong>Internal Review</strong> client for this workspace.</p>
+      </div>
+      {% endif %}
+
+      <form
+        class="upload-form"
+        data-upload
+        action="/review/jobs/new{% if selected_client %}?client_id={{ selected_client.id }}{% endif %}"
+        method="post"
+        enctype="multipart/form-data"
+      >
+        <label class="dropzone" data-dropzone>
+          <input
+            type="file"
+            name="documents"
+            multiple
+            required
+            accept=".pdf,.jpg,.jpeg,.png,.webp,.tif,.tiff,application/pdf,image/jpeg,image/png,image/webp,image/tiff"
+          >
+          <span class="dropzone-icon" aria-hidden="true">{{ icon('file-up', 22) }}</span>
+          <span class="dropzone-title">Drop documents here or click to browse</span>
+          <span class="dropzone-hint">PDF, JPEG, PNG, WebP or TIFF · up to {{ max_file_mb }} MB each · up to {{ max_documents }} files</span>
+          <span class="file-list" data-file-list></span>
+        </label>
+
+        <div class="field">
+          <label class="field-label" for="job-ref">Job reference <span class="field-optional">(optional)</span></label>
+          <input id="job-ref" name="job_ref" maxlength="128" placeholder="e.g. BL-2026-00417" autocomplete="off">
+          <p class="field-hint">Used to recognise the job in lists and search. Internal jobs still work without one.</p>
+        </div>
+
+        <div class="form-actions">
+          <button class="btn btn-primary" data-submit data-busy-label="Uploading…" {% if clients_unavailable %}disabled{% endif %}>{{ icon('upload', 14) }}<span>Create job and extract</span></button>
+          <a class="btn btn-secondary" href="/review/jobs">Cancel</a>
+        </div>
+        <p class="upload-status" data-upload-status role="status" aria-live="polite"></p>
+      </form>
+    </div>
+  </section>
+
+  <aside class="card pipeline-card">
+    <header class="card-header">
+      <div>
+        <h2 class="card-title">What happens next</h2>
+        <p class="card-subtitle">The same pipeline used by API submissions.</p>
+      </div>
+    </header>
+    <div class="card-body">
+      <ol class="pipeline-steps">
+        <li>
+          <span class="step-index">1</span>
+          <div><strong>Validate</strong><p>File type, size, page limits and shipment checks.</p></div>
+        </li>
+        <li>
+          <span class="step-index">2</span>
+          <div><strong>Segment and classify</strong><p>Pages are split and each document type is identified.</p></div>
+        </li>
+        <li>
+          <span class="step-index">3</span>
+          <div><strong>Extract fields</strong><p>Values are read with page and bounding-box provenance.</p></div>
+        </li>
+        <li>
+          <span class="step-index">4</span>
+          <div><strong>Check and review</strong><p>Checks and conflicts route anything uncertain to a reviewer.</p></div>
+        </li>
+      </ol>
+      <p class="pipeline-note">{{ icon('clock', 14) }}<span>You will be taken to the job page, which updates automatically while processing.</span></p>
+    </div>
+  </aside>
+</div>
+{% endblock %}

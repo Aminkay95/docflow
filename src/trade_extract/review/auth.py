@@ -53,6 +53,7 @@ def principal(request: Request, session: Session = Depends(get_session)) -> Revi
         raise HTTPException(401, "Session expired. Log in at /review/login.") from None
     request.state.review_session = data
     request.state.review_role = reviewer.role
+    request.state.reviewer = reviewer
     if request.method not in ("GET", "HEAD", "OPTIONS"):
         if reviewer.role == "auditor" and not request.url.path.endswith(("/logout", "/logout-all")):
             raise HTTPException(403, "Read-only account")

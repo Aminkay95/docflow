@@ -1,0 +1,24 @@
+{% from "partials/icon.html" import icon %}
+{% macro review_value(path, field, label, input_id, document, item, reviewed, read_only, compact=false) %}
+{% set current = document.corrections.get(path, field) %}
+{% if item and not read_only and path not in reviewed %}
+<form class="inline-edit" data-resolve="/review/queues/{{ item.id }}/resolve" data-field='{{ field | tojson }}'>
+  <input type="hidden" name="field_path" value="{{ path }}"><input type="hidden" name="outcome" value="corrected"><input type="hidden" name="reason" value="Corrected during review.">
+  <div class="{{ 'line-item-value' if compact else 'inline-field-row' }}">
+    <label class="{{ 'sr-only' if compact else 'inline-field-name' }}" for="{{ input_id }}"{% if not compact %} title="{{ path }}"{% endif %}>{{ label }}</label>
+    <input id="{{ input_id }}" class="inline-field-value" name="value" value="{{ current.value }}" aria-label="{{ label }}" title="Click to edit {{ label }}">
+  </div>
+  <div class="inline-edit-actions">
+    <div class="inline-edit-buttons">
+      <button class="btn btn-primary btn-sm" type="submit" data-busy-label="Saving…">{{ icon('check', 14) }}<span>Save correction</span></button>
+    </div>
+  </div>
+</form>
+{% else %}
+<div class="{{ 'line-item-value' if compact else 'inline-field-row' }}">{% if not compact %}<span class="inline-field-name" title="{{ path }}">{{ label }}</span>{% endif %}<span class="inline-field-readonly" title="{{ path }}">{{ current.value }}</span></div>
+{% endif %}
+<div class="inline-field-meta"><span class="inline-field-page">{{ icon('file-text', 12) }} Page {{ field.provenance.page_index + 1 }}</span>
+{% if path in reviewed %}<span class="resolved-note">{{ icon('check', 12) }} Reviewed{% if path in document.corrections %} &middot; Corrected{% endif %}</span>{% elif item %}<span class="needs-review">Needs review</span>{% endif %}
+</div>
+{% if path in document.corrections %}<details class="inline-original"><summary>Original value</summary><p class="mono">{{ field.value }}</p></details>{% endif %}
+{% endmacro %}

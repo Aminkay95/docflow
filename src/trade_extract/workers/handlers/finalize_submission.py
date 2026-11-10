@@ -163,3 +163,4 @@ def handle(
         if reasons
         else "result.completed",
     )
+    session.info["pipeline_result_job"] = (job.id, job.client_id)

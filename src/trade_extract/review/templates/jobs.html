@@ -1,0 +1,110 @@
+{% extends "base.html" %}
+{% from "partials/icon.html" import icon %}
+{% block actions %}
+<a class="btn btn-secondary btn-sm" href="{{ request.url.path }}{% if status or client or query %}?{% if status %}status={{ status }}{% endif %}{% if client %}{% if status %}&{% endif %}client={{ client }}{% endif %}{% if query %}{% if status or client %}&{% endif %}q={{ query | urlencode }}{% endif %}{% endif %}">{{ icon('rotate-cw', 14) }}<span>Refresh</span></a>
+{% endblock %}
+{% block content %}
+{% set has_filters = status or client or query %}
+<section class="card">
+  <div class="list-toolbar">
+    <nav class="tab-list" aria-label="Filter jobs by status">
+      <a class="tab {{ 'is-active' if not status else '' }}" href="/review/jobs{% if client %}?client={{ client }}{% endif %}"{% if not status %} aria-current="page"{% endif %}>All jobs</a>
+      {% for state in ('queued', 'processing', 'review_required', 'completed', 'failed') %}
+      <a class="tab {{ 'is-active' if status == state else '' }}" href="/review/jobs?status={{ state }}{% if client %}&client={{ client }}{% endif %}"{% if status == state %} aria-current="page"{% endif %}>
+        <span>{{ state | humanize }}</span><span class="tab-count">{{ status_counts.get(state, 0) }}</span>
+      </a>
+      {% endfor %}
+    </nav>
+    <form class="filter-bar" method="get" action="/review/jobs" role="search">
+      {% if status %}<input type="hidden" name="status" value="{{ status }}">{% endif %}
+      <label class="sr-only" for="job-search">Search jobs</label>
+      <div class="search-field">
+        <span class="search-field-icon">{{ icon('search', 14) }}</span>
+        <input id="job-search" type="search" name="q" value="{{ query }}" placeholder="Search job ref, ID or client" autocomplete="off">
+      </div>
+      <label class="sr-only" for="client-filter">Client</label>
+      <div class="select-field">
+        {{ icon('building-2', 14, 'select-field-icon') }}
+        <select id="client-filter" name="client">
+          <option value="">All clients</option>
+          {% for option in clients %}
+          <option value="{{ option.id }}" {{ 'selected' if client == option.id else '' }}>{{ option.name }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <button class="btn btn-secondary btn-sm{{ ' is-applied' if has_filters else '' }}" type="submit">{{ icon('filter', 14) }}<span>Filter</span></button>
+      {% if has_filters %}<a class="btn btn-ghost btn-sm" href="/review/jobs">Clear</a>{% endif %}
+    </form>
+  </div>
+
+  {% if rows %}
+  <div class="table-wrap">
+    <table class="table">
+      <thead>
+        <tr>
+          <th scope="col">Job</th>
+          <th scope="col">Client</th>
+          <th scope="col">Status</th>
+          <th scope="col" class="num">Documents</th>
+          <th scope="col" class="num">Reviews</th>
+          <th scope="col" class="num">Conflicts</th>
+          <th scope="col">Updated</th>
+          <th scope="col" class="actions-col"><span class="sr-only">Actions</span></th>
+        </tr>
+      </thead>
+      <tbody>
+      {% for job, client_name in rows %}
+        <tr>
+          <td>
+            <a class="table-link" href="/review/jobs/{{ job.id }}">{{ job.job_ref or job.id }}</a>
+            <small class="mono block text-muted">{{ job.id }}</small>
+          </td>
+          <td class="text-muted">{{ client_name }}</td>
+          <td><span class="badge badge-{{ job.status | badge }}">{{ job.status | humanize }}</span></td>
+          <td class="num tabular">{{ job.document_count }}</td>
+          <td class="num tabular">
+            {% if job.open_review_count %}<span class="badge badge-warning">{{ job.open_review_count }}</span>{% else %}<span class="text-muted">0</span>{% endif %}
+          </td>
+          <td class="num tabular">
+            {% if job.open_conflict_count %}<span class="badge badge-danger">{{ job.open_conflict_count }}</span>{% else %}<span class="text-muted">0</span>{% endif %}
+          </td>
+          <td class="text-muted nowrap">{{ job.updated_at | when }}</td>
+          <td class="actions-col">
+            <a class="icon-btn" href="/review/jobs/{{ job.id }}" aria-label="View job details: {{ job.job_ref or job.id }}" title="View job details">
+              {{ icon('eye', 16) }}
+            </a>
+          </td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  <footer class="card-footer spread">
+    <p class="text-muted">{{ total }} job{{ '' if total == 1 else 's' }}{% if status %} · {{ status | humanize }}{% endif %}</p>
+    <div class="pagination">
+      {% if page > 1 %}
+      <a class="btn btn-secondary btn-sm" href="/review/jobs?page={{ page - 1 }}{% if status %}&status={{ status }}{% endif %}{% if client %}&client={{ client }}{% endif %}{% if query %}&q={{ query | urlencode }}{% endif %}">{{ icon('chevron-left', 14) }}<span>Previous</span></a>
+      {% else %}
+      <span class="btn btn-secondary btn-sm" aria-disabled="true">{{ icon('chevron-left', 14) }}<span>Previous</span></span>
+      {% endif %}
+      <span class="pagination-label">Page <strong>{{ page }}</strong> of {{ pages }}</span>
+      {% if page < pages %}
+      <a class="btn btn-secondary btn-sm" href="/review/jobs?page={{ page + 1 }}{% if status %}&status={{ status }}{% endif %}{% if client %}&client={{ client }}{% endif %}{% if query %}&q={{ query | urlencode }}{% endif %}"><span>Next</span>{{ icon('chevron-right', 14) }}</a>
+      {% else %}
+      <span class="btn btn-secondary btn-sm" aria-disabled="true"><span>Next</span>{{ icon('chevron-right', 14) }}</span>
+      {% endif %}
+    </div>
+  </footer>
+  {% else %}
+  <div class="empty">
+    <span class="empty-icon">{{ icon('search', 20) }}</span>
+    <p class="empty-title">No matching jobs</p>
+    <p class="empty-copy">Try a different status, client or search term. New submissions appear here automatically.</p>
+    <div class="empty-actions">
+      {% if not read_only %}<a class="btn btn-primary btn-sm" href="/review/jobs/new">{{ icon('plus', 14) }}<span>Create job</span></a>{% endif %}
+      <a class="btn btn-secondary btn-sm" href="/review/jobs">Clear filters</a>
+    </div>
+  </div>
+  {% endif %}
+</section>
+{% endblock %}

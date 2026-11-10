@@ -13,10 +13,12 @@ class Reviewer(Base):
     __table_args__ = (
         CheckConstraint("role IN ('reviewer', 'admin', 'auditor')", name="ck_reviewers_role"),
         Index("ux_reviewers_username_lower", text("lower(username)"), unique=True),
+        Index("ux_reviewers_email_lower", text("lower(email)"), unique=True),
     )
 
     id: Mapped[str] = mapped_column(Text, primary_key=True)
     username: Mapped[str] = mapped_column(Text, nullable=False)
+    email: Mapped[str | None] = mapped_column(Text, nullable=True)
     password_hash: Mapped[str] = mapped_column(Text, nullable=False)
     display_name: Mapped[str] = mapped_column(Text, nullable=False)
     role: Mapped[str] = mapped_column(Text, nullable=False, server_default=text("'reviewer'"))

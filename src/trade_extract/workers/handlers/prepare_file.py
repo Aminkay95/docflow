@@ -274,7 +274,20 @@ def handle(
         session.flush()
         from trade_extract.schemas.registry import DOCUMENT_SCHEMAS
 
-        if spec.document_type in DOCUMENT_SCHEMAS:
+        if settings.llm_classification_enabled:
+            tasks_repo.enqueue(
+                session,
+                job_id=file_row.job_id,
+                submission_id=file_row.submission_id,
+                document_id=document.id,
+                segment_id=segment_id,
+                kind="classify_segment",
+                now=now,
+                dedupe_key=f"classify_segment:{document.id}",
+            )
+        elif spec.document_type in DOCUMENT_SCHEMAS or (
+            spec.document_type == "unknown" and settings.provider == "deepseek"
+        ):
             tasks_repo.enqueue(
                 session,
                 job_id=file_row.job_id,

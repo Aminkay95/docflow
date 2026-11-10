@@ -1,5 +1,15 @@
 # Evaluation corpus intake and execution
 
+## Local-first release gate
+
+Live evaluation reports provider cost and latency per page alongside extraction quality. The
+approved gate is: average provider cost no greater than USD 0.04/page, critical scalar exact match
+at least 95%, table-cell accuracy at least 90%, and p95 end-to-end latency below 90 seconds/page.
+Report local-only rate, provider-call count, input/output/cache tokens, truncations and partial-review
+rate. A page that exceeds the configured safety ceiling or evidence budget is a named review case,
+not a silently missing prediction. Cost and accuracy claims require labelled truth; unlabelled public
+samples are smoke tests only and must not be reported as accuracy evidence.
+
 The corpus unit is a **complete caller-grouped job**. Each `*.labels.json` manifest
 requires a unique `job_id`, explicit `origin: real|synthetic`, `complete: true`,
 all document identities and relative evidence paths, a field label map, row counts,
@@ -15,6 +25,34 @@ Run the authored synthetic service corpus without credentials or network calls:
 ```powershell
 uv run python -m scripts.eval tests/fixtures/evaluation/synthetic --pipeline scripts.eval_synthetic:run --output "$env:TEMP/trade-extract-evaluation"
 ```
+
+## Classification head-to-head (lexicon vs stage-01 LLM)
+
+`scripts/eval_classify.py` compares the regex lexicon (`classify_page`) against
+the stage-01 LLM classifier (`classify_segment` reading `01-classify.md`) on a
+labelled text corpus. Offline mode is the default: it replays scripted
+`MockProvider` verdicts, so it validates the harness, scoring and routing rules
+— it does **not** measure live model accuracy.
+
+```powershell
+uv run python scripts/eval_classify.py tests/fixtures/classification/corpus.json --verdicts tests/fixtures/classification/verdicts.json --output "$env:TEMP/trade-extract-classify-eval/report.json"
+```
+
+The corpus is a JSON object with `origin: synthetic|real` and `samples`
+(`{id, text, expected}`); `expected` uses the segmentation vocabulary and
+includes `unknown`. Offline mode refuses `origin: real` and requires a scripted
+verdict per sample. Live mode (`--allow-live`) requires `PROVIDER=deepseek`
+with credentials and a separately supplied labelled corpus; same authorization
+rule as every other live adapter.
+
+Scoring rules: accuracy counts a correct type; for the LLM, an expected
+`packing_list` scores correct as `unknown` (the closed list maps it there).
+Review rate is the share routed to `unknown`. Agreement compares *routing
+outcome*, so `packing_list` vs `unknown` — both review — is not a
+disagreement. Proportions carry 95% Wilson intervals. The report includes
+per-type hits, disagreements with expected/lexicon/llm labels, and provider
+token totals. Reports are descriptive evidence, never automatic promotion: the
+cutover gate stays a separately measured live run.
 
 The adapter reads separate authored evidence, builds a scripted mock reader response,
 and invokes `services.extraction.extract`, invoice checks, policy decisions and

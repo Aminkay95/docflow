@@ -1,18 +1,63 @@
 """Tenant-scoped accumulated job reads."""
 
+import json
+from copy import deepcopy
 from typing import Any
 
+from fastapi.encoders import jsonable_encoder
 from sqlalchemy import Select, func, select, tuple_
 from sqlalchemy.orm import Session
 
 from trade_extract.db.models.document import Document
-from trade_extract.db.models.evidence import ConflictRecord, ConflictSource
+from trade_extract.db.models.evidence import ConflictRecord, ConflictSource, ReviewItem
 from trade_extract.db.models.job import Job
 from trade_extract.db.models.policy import Policy
+from trade_extract.db.models.review import ReviewResolution
 from trade_extract.db.models.submission import Submission
 from trade_extract.db.repositories.evidence import conflicts_for
 from trade_extract.domain import errors
 from trade_extract.services.ingest import build_result
+
+
+def job_result(session: Session, job_id: str, client_id: str) -> dict[str, Any]:
+    """Build a job-wide handoff, retaining source values alongside reviewed values."""
+    result = read_job(session, job_id, client_id)
+    documents = []
+    for record in result["documents"]:
+        document = deepcopy(read_document(session, record["document_id"], client_id))
+        document["effective_fields"] = {
+            **(document.get("fields") or {}),
+            **(document.get("extension") or {}),
+            **(document.get("corrections") or {}),
+        }
+        documents.append(document)
+    result["documents"] = documents
+    result["review_resolutions"] = [
+        dict(
+            resolution_id=resolution.id,
+            reviewer_id=resolution.reviewer_id,
+            document_id=item.document_id,
+            conflict_id=item.conflict_id,
+            field_path=resolution.field_path,
+            outcome=resolution.outcome,
+            reason=resolution.reason,
+            chosen_document_id=resolution.chosen_document_id,
+            corrected_value=resolution.corrected_value,
+            created_at=resolution.created_at,
+        )
+        for resolution, item in session.execute(
+            select(ReviewResolution, ReviewItem)
+            .join(ReviewItem, ReviewItem.id == ReviewResolution.review_item_id)
+            .where(ReviewItem.job_id == job_id)
+            .order_by(ReviewResolution.created_at, ReviewResolution.id)
+        )
+    ]
+    return jsonable_encoder(result)
+
+
+def emit_terminal_result(result: dict[str, Any], *, phase: str) -> None:
+    """Explicit terminal export requested by the operator; separate from diagnostic logs."""
+    print(json.dumps({"event": phase, "result": result}, ensure_ascii=False), flush=True)
 
 
 def read_job(session: Session, job_id: str, client_id: str) -> dict[str, Any]:

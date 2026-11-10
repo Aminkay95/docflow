@@ -530,9 +530,7 @@ def _bounded_results(results: Any, maximum: int) -> list[Any]:
     return bounded
 
 
-def _spans_from_overall(
-    overall: dict[str, Any], width: int, height: int
-) -> tuple[OCRSpan, ...]:
+def _spans_from_overall(overall: dict[str, Any], width: int, height: int) -> tuple[OCRSpan, ...]:
     texts = overall.get("rec_texts", [])
     polygons = overall.get("rec_polys", overall.get("dt_polys", []))
     scores = overall.get("rec_scores", [])

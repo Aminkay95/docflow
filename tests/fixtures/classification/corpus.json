@@ -1,0 +1,85 @@
+{
+  "origin": "synthetic",
+  "samples": [
+    {
+      "id": "inv-01",
+      "expected": "commercial_invoice",
+      "text": "COMMERCIAL INVOICE\nInvoice No: INV-2026-00417\nInvoice Date: 2026-01-15\nSeller: Acme Traders Ltd\nBuyer: Beta Industries\nTotal Payable: KES 1,240,000.00"
+    },
+    {
+      "id": "inv-02",
+      "expected": "commercial_invoice",
+      "text": "TAX INVOICE\nInvoice Number: TI-88412\nAmount Due: KES 45,000.00\nUnit Price: 1,250.00\nBill to: Gamma Retailers"
+    },
+    {
+      "id": "inv-03",
+      "expected": "commercial_invoice",
+      "text": "INVOICE\nINV-2026-1187\nDate: 2026-02-03\nTotal Payable: USD 9,400.00"
+    },
+    {
+      "id": "pro-01",
+      "expected": "proforma_invoice",
+      "text": "PROFORMA INVOICE\nProforma No: PF-2026-0091\nValid until: 2026-12-01\nSeller: Delta Exports\nBuyer: Epsilon Imports"
+    },
+    {
+      "id": "pro-02",
+      "expected": "proforma_invoice",
+      "text": "PROFORMA\nQuote Ref: Q-7719\nValid until 2026-06-30"
+    },
+    {
+      "id": "bol-01",
+      "expected": "bill_of_lading",
+      "text": "BILL OF LADING\nB/L No: MSA-2026-4471\nShipper: Acme Traders Ltd\nConsignee: Beta Industries\nPort of Loading: Mombasa\nPort of Discharge: Dubai\nVessel: MV Horizon\nFreight Prepaid"
+    },
+    {
+      "id": "bol-02",
+      "expected": "bill_of_lading",
+      "text": "SEA WAYBILL\nWaybill No: SW-99120\nShipper: Delta Exports\nConsignee: Epsilon Imports\nNotify Party: Forwarders Kenya"
+    },
+    {
+      "id": "do-01",
+      "expected": "delivery_order",
+      "text": "DELIVERY ORDER\nDelivery Order No: DO-2026-338\nConsignee: Beta Industries\nBill of Lading: MSA-2026-4471\nFree time: 7 days"
+    },
+    {
+      "id": "pass-01",
+      "expected": "port_pass",
+      "text": "PORT PASS\nPass No: PP-1182\nVehicle: KAA 123X\nDriver: J. Otieno\nEscort required"
+    },
+    {
+      "id": "ce-01",
+      "expected": "custom_entry",
+      "text": "CUSTOMS DECLARATION\nEntry No: C-2026-118422\nImporter: Gamma Retailers\nHS Code: 8471.30.00\nCustoms value: KES 2,100,000.00"
+    },
+    {
+      "id": "memo-01",
+      "expected": "verification_memo",
+      "text": "VERIFICATION MEMO\nDate: 2026-03-02\nSeal intact\nFindings: no discrepancies\nPackages received: 120"
+    },
+    {
+      "id": "pack-01",
+      "expected": "packing_list",
+      "text": "PACKING LIST\nGross weight: 18,450.00\nNet weight: 17,900.00\nMarks and numbers: ABC/1-120"
+    },
+    {
+      "id": "unk-01",
+      "expected": "unknown",
+      "text": "MEETING MINUTES\nAttendees: 5\nAction items: follow up with supplier\nNext review: 2026-04-01"
+    },
+    {
+      "id": "unk-02",
+      "expected": "unknown",
+      "text": "WAREHOUSE RECEIPT\nBay 14\nOperator: K. Mwangi"
+    },
+    {
+      "id": "edge-tie-01",
+      "expected": "unknown",
+      "text": "DELIVERY ORDER\nPORT PASS\nGate 4\nConsignee: Beta"
+    },
+    {
+      "id": "edge-noisy-01",
+      "expected": "commercial_invoice",
+      "text": "INVOICE\nInvoice No: INV-2026-00998\nUnit Price: 750.00\nAmount Due: KES 22,500.00\nBill to: Delta Exports\nPage 1 of 2"
+    }
+  ]
+}

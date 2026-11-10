@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import asdict
+from dataclasses import asdict, replace
 from typing import Any
 
 from sqlalchemy import select
@@ -20,7 +20,8 @@ from trade_extract.db.repositories import evidence
 from trade_extract.db.repositories.provider_calls import ProviderCallRecorder
 from trade_extract.domain.clock import Clock
 from trade_extract.domain.conditioning import CoordinateTransform
-from trade_extract.domain.inference import PageImage
+from trade_extract.domain.hashing import document_hash
+from trade_extract.domain.inference import ExtractionOutcome, PageImage
 from trade_extract.domain.provenance import BBox
 from trade_extract.domain.readers import PageInput, TextCharacter
 from trade_extract.providers import make_provider
@@ -28,6 +29,8 @@ from trade_extract.schemas.base import EnvelopeSource
 from trade_extract.services.checks import run_invoice_checks
 from trade_extract.services.decisions import decide_document, effective_policy
 from trade_extract.services.extraction import extract
+from trade_extract.services.readers.paddle import PaddleReader
+from trade_extract.services.segmentation import classify_page
 from trade_extract.services.storage import build_storage
 
 
@@ -149,24 +152,66 @@ def handle(session: Session, task: JobTask, *, settings: Settings, clock: Clock)
                 if len(blob) > settings.provider_max_image_bytes:
                     raise ValueError("conditioned_image_byte_budget_exhausted")
         inputs.append(rehydrate(page, blob))
-    provider = make_provider(
-        settings,
-        recorder=ProviderCallRecorder(
-            sessionmaker(bind=session.get_bind()),
-            provider=settings.provider,
-            reader="vision",
-            job_id=identity["job_id"],
-            document_id=identity["id"],
-        ),
-    )
-    outcome = extract(
-        provider,
-        document_type=identity["document_type"],
-        source=source,
-        pages=tuple(inputs),
-        segment_id=identity["segment_id"],
-        settings=settings,
-    )
+    if identity["document_type"] == "unknown":
+        paddle = PaddleReader(settings)
+        classified_inputs = []
+        classifications = []
+        for page_input in inputs:
+            if page_input.is_unreadable or page_input.image is None:
+                classified_inputs.append(page_input)
+                continue
+            ocr = paddle.inspect(page_input, require_structure=False)
+            classified_inputs.append(replace(page_input, ocr=ocr))
+            text = "\n".join(span.text for span in ocr.spans if span.text.strip())
+            result = classify_page(text, min_confidence=settings.segmentation_min_confidence)
+            if result.document_type != "unknown":
+                classifications.append(result)
+        inputs = classified_inputs
+        types = {result.document_type for result in classifications}
+        if len(types) == 1:
+            reclassified_type = next(iter(types))
+            identity["document_type"] = reclassified_type
+            identity["document_hash"] = document_hash(
+                source_file_sha256=file.sha256,
+                page_start=identity["page_start"],
+                page_end=identity["page_end"],
+                document_type=reclassified_type,
+            )
+            document.document_type = reclassified_type
+            document.document_hash = identity["document_hash"]
+            segment = session.get(Segment, identity["segment_id"])
+            if segment is not None:
+                segment.document_type = reclassified_type
+                segment.confidence = min(result.confidence for result in classifications)
+            session.commit()
+            source = source.model_copy(
+                update={"document_hash": f"sha256:{identity['document_hash']}"}
+            )
+        else:
+            outcome = ExtractionOutcome(
+                "extracted",
+                errors=("unsupported_document_type", "ocr_reclassification_ambiguous"),
+                diagnostics=("provider_skipped_unknown_document",),
+            )
+    if identity["document_type"] != "unknown":
+        provider = make_provider(
+            settings,
+            recorder=ProviderCallRecorder(
+                sessionmaker(bind=session.get_bind()),
+                provider=settings.provider,
+                reader="vision",
+                job_id=identity["job_id"],
+                document_id=identity["id"],
+            ),
+        )
+        outcome = extract(
+            provider,
+            document_type=identity["document_type"],
+            source=source,
+            pages=tuple(inputs),
+            segment_id=identity["segment_id"],
+            settings=settings,
+        )
     status = "failed" if outcome.status == "extraction_failed" else outcome.status
     gate, _ = effective_policy(config)
     checks = (
@@ -224,6 +269,7 @@ def handle(session: Session, task: JobTask, *, settings: Settings, clock: Clock)
         document.supplier_name = supplier
         document.supplier_key = " ".join(supplier.split()).casefold()
     from trade_extract.services.trust import observe
+
     observe(session, document, clock.now())
     evidence.save_document(session, document, checks, decision)
     from trade_extract.db.repositories import tasks as tasks_repo
