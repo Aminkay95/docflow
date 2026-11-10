@@ -455,7 +455,7 @@ def extract(
                 ),
                 stage="vision_or_ocr_document",
             )
-            if isinstance(reader, (VisionReader, PaddleReader))
+            if isinstance(reader, VisionReader)
             else request
         )
         base_request = current
@@ -711,7 +711,7 @@ def extract(
             else page_map.get(p.page_index, p)
             for p in pages
         )
-        return extract(
+        rerun = extract(
             provider,
             document_type=document_type,
             source=source,
@@ -724,6 +724,11 @@ def extract(
             _structure_pass=_structure_pass + 1,
             _provider_calls=_provider_calls,
         )
+        if rerun.document is None:
+            partial = retain_partial(rerun.errors)
+            if partial is not None:
+                return partial
+        return rerun
     if newly_required:
         inventory = build_inventory(tuple(page_map.values()), required | newly_required, settings)
         # Such rows have not been read at native resolution in this request.

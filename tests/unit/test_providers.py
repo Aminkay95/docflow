@@ -53,7 +53,7 @@ def test_connection_retry_then_success_and_json_mode():
 
     attempts = []
     provider = DeepSeekProvider(
-        Settings(provider="deepseek", deepseek_api_key="secret"),
+        Settings(provider="deepseek", deepseek_api_key="secret", provider_max_output_tokens=8192),
         client=httpx.Client(transport=httpx.MockTransport(handler)),
         recorder=attempts.append,
         sleep=lambda seconds: None,
@@ -83,11 +83,15 @@ def test_output_token_budget_is_forwarded_and_capped():
     provider.text_reason(request())
 
     assert calls[0]["max_tokens"] == 1024
+    assert calls[0]["thinking"] == {"type": "disabled"}
     with pytest.raises(ValidationError):
-        Settings(provider_max_output_tokens=8193)
+        Settings(provider_max_output_tokens=65537)
 
 
-def test_images_rejected_before_http_and_prompt_stability():
+def test_images_rejected_before_http_and_prompt_stability(monkeypatch):
+    monkeypatch.setattr(
+        "trade_extract.config.get_settings", lambda: Settings(stage_prompts_enabled=False)
+    )
     provider = DeepSeekProvider(
         Settings(provider="deepseek", deepseek_api_key="secret"), recorder=lambda attempt: None
     )

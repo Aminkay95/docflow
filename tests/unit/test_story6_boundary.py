@@ -82,7 +82,7 @@ def test_paddle_citations_are_guarded_at_extract_boundary(tmp_path, bad):
         document_type="commercial_invoice",
         source=source,
         pages=(page,),
-        readers=(PaddleReader(),),
+        readers=(StaticReader(ReaderKind.PADDLE, raw),),
         max_repairs=0,
     )
     assert result.status == ("extraction_failed" if bad else "extracted"), result.errors
@@ -195,7 +195,7 @@ def test_paddle_rejects_each_unsupported_citation_part(tmp_path, damage):
         document_type="commercial_invoice",
         source=source,
         pages=(replace(page, ocr=OCREvidence(0, "ok", spans)),),
-        readers=(PaddleReader(),),
+        readers=(StaticReader(ReaderKind.PADDLE, raw),),
         max_repairs=0,
     )
     assert result.status == "extraction_failed"
@@ -522,7 +522,10 @@ def test_multipage_vision_validates_partial_scalars_then_complete_document(tmp_p
     assert len(result.document.fields) == len(payload(ReaderKind.VISION)["fields"])
 
 
-def test_late_named_table_uses_native_second_pass_and_effective_ocr_limits(tmp_path):
+@pytest.mark.parametrize("exhaust_recursive", [False, True])
+def test_late_named_table_uses_native_second_pass_and_effective_ocr_limits(
+    tmp_path, exhaust_recursive
+):
     import json
 
     from trade_extract.services.readers import TextLayerReader, VisionReader
@@ -540,8 +543,14 @@ def test_late_named_table_uses_native_second_pass_and_effective_ocr_limits(tmp_p
 
     class Provider:
         native_calls = 0
+        text_calls = 0
 
         def text_reason(self, request):
+            self.text_calls += 1
+            if exhaust_recursive and self.text_calls > 1:
+                from trade_extract.domain.inference import ProviderError
+
+                raise ProviderError("provider_call_budget_exhausted")
             raw = payload(ReaderKind.TEXT_LAYER)
             raw["tables"] = {
                 "line_items": {
@@ -577,7 +586,20 @@ def test_late_named_table_uses_native_second_pass_and_effective_ocr_limits(tmp_p
         max_repairs=0,
     )
     assert result.status == "extracted", result.errors
-    assert provider.native_calls == 1
+    if exhaust_recursive:
+        assert provider.text_calls == 2
+        assert provider.native_calls == 0
+        assert result.document.status == "review_required"
+        assert "provider_call_budget_exhausted" in result.errors
+        assert "partial_evidence_retained" in result.diagnostics
+        expected = payload(ReaderKind.TEXT_LAYER)["fields"]["invoice.number"]
+        retained = result.document.fields["invoice.number"]
+        assert retained.value == expected["value"]
+        assert retained.provenance.bbox.model_dump() == expected["provenance"]["bbox"]
+        assert retained.provenance.document_hash == source.document_hash
+        assert retained.provenance.reader == ReaderKind.TEXT_LAYER
+    else:
+        assert provider.native_calls == 1
 
 
 def test_extraction_settings_bound_an_explicit_paddle_reader(tmp_path):

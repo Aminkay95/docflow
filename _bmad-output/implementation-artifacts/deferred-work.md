@@ -145,3 +145,6 @@ status: open
 - source_spec: `_bmad-output/implementation-artifacts/spec-simplify-job-review-workspace.md`
   summary: Preserve completed table metadata when retaining partial extraction.
   evidence: Existing retain_partial constructs tables={} and can lose metadata associated with retained indexed candidates.
+- source_spec: `_bmad-output/implementation-artifacts/spec-recover-failed-deepseek-extraction.md`
+  summary: Preserve first-pass verified fields when table redispatch returns a partial document containing fewer fields.
+  evidence: Baseline extract() returned the recursive outcome directly; the recovery fix restores prior evidence only when the recursive outcome has no document. A partial recursive document may omit earlier fields or disagreements. Add a merge across both candidate sets with table/provenance validation and regression coverage before relying on partial redispatch evidence retention.

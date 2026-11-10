@@ -158,3 +158,15 @@ def test_stage_directory_is_unchanged_on_disk():
         stages.CLASSIFY_STAGE_FILE,
         *stages.TYPE_STAGE_FILES.values(),
     }
+
+
+def test_type_stage_compact_contract_has_explicit_precedence():
+    text = stages.type_system_prompt(
+        "commercial_invoice",
+        {"contract": "evidence_values_v1", "allowed_scalar_paths": ["invoice.number"]},
+    )
+    assert "supplied schema overrides all response-shape" in text
+    assert "never emit an envelope" in text
+    assert "OCR values must equal whole spans" in text
+    with pytest.raises(ValueError, match="unsupported_type_stage"):
+        stages.type_system_prompt("unknown", {})

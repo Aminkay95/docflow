@@ -17,27 +17,9 @@ from trade_extract.domain.ids import new_id
 
 
 def build_policy_config(settings: Settings) -> dict[str, object]:
-    return {
-        "invoice_pass_enabled": True,
-        "trust_ramp_enabled": False,
-        "review_depth": {
-            "commercial_invoice": "gate",
-            "proforma_invoice": "full",
-            "bill_of_lading": "full",
-            "delivery_order": "full",
-            "port_pass": "full",
-            "custom_entry": "full",
-            "verification_memo": "full",
-            "packing_list": "full",
-        },
-        "limits": {
-            "max_documents_per_group": settings.max_documents_per_group,
-            "max_file_bytes": settings.max_file_bytes,
-            "max_pages_per_file": settings.max_pages_per_file,
-            "max_pages_per_submission": settings.max_pages_per_submission,
-        },
-    }
+    from trade_extract.domain.policy import GatePolicy
 
+    return GatePolicy(invoice_pass_enabled=True, review_depth="checks").model_dump(mode="json")
 
 def main() -> int:
     settings = get_settings()

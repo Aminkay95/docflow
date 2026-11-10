@@ -25,6 +25,11 @@ def test_provider_budget_and_paddlex_cache_are_worker_only():
             "PROVIDER": "deepseek",
             "DEEPSEEK_API_KEY": "compose-contract-key",
             "PROVIDER_MAX_OUTPUT_TOKENS": "2048",
+            "PROVIDER_TIMEOUT_SECONDS": "240",
+            "PROVIDER_CONNECT_TIMEOUT_SECONDS": "12",
+            "STAGE_PROMPTS_ENABLED": "true",
+            "LLM_EXTRACTION_PRIORITY": "true",
+            "LLM_CLASSIFICATION_ENABLED": "false",
             "OCR_DETECTION_MODEL": "compose-det",
             "OCR_RECOGNITION_MODEL": "compose-rec",
             "TABLE_WIRED_STRUCTURE_MODEL": "compose-wired",
@@ -43,6 +48,14 @@ def test_provider_budget_and_paddlex_cache_are_worker_only():
     services = config["services"]
 
     assert services["worker"]["environment"]["PROVIDER_MAX_OUTPUT_TOKENS"] == "2048"
+    for key, value in {
+        "PROVIDER_TIMEOUT_SECONDS": "240",
+        "PROVIDER_CONNECT_TIMEOUT_SECONDS": "12",
+        "STAGE_PROMPTS_ENABLED": "true",
+        "LLM_EXTRACTION_PRIORITY": "true",
+        "LLM_CLASSIFICATION_ENABLED": "false",
+    }.items():
+        assert services["worker"]["environment"][key] == value
     assert services["worker"]["environment"]["DEEPSEEK_API_KEY"] == "compose-contract-key"
     assert services["worker"]["environment"]["OCR_DETECTION_MODEL"] == "compose-det"
     assert services["worker"]["environment"]["OCR_RECOGNITION_MODEL"] == "compose-rec"

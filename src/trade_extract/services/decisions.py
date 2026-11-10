@@ -5,12 +5,12 @@ from typing import Any
 from pydantic import ValidationError
 
 from trade_extract.domain.checks import CHECK_VERSION, CheckResult
-from trade_extract.domain.policy import GatePolicy
+from trade_extract.domain.policy import GatePolicy, parse_gate_policy
 
 
 def effective_policy(config: dict[str, Any]) -> tuple[GatePolicy, bool]:
     try:
-        return GatePolicy.model_validate(config), True
+        return parse_gate_policy(config), True
     except (ValidationError, ValueError, TypeError):
         return GatePolicy(), False
 

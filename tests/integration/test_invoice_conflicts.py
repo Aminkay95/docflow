@@ -177,10 +177,14 @@ def test_exhausted_extraction_failure_terminalizes_document(api, tmp_path, monke
 
 def test_worker_uses_reusable_extractor_with_injected_provider(api, monkeypatch):
     import json
+    from dataclasses import replace
 
     from trade_extract.domain.inference import ProviderResult
     from trade_extract.domain.provenance import BBox
+    from trade_extract.domain.readers import PageFeatures
     from trade_extract.schemas.invoice import INVOICE_FIELD_SET
+    from trade_extract.services.extraction import extract as actual_extract
+    from trade_extract.services.readers import TextLayerReader, VisionReader
 
     values = ["INV-ACTUAL", "2026-11-03", "USD", "Seller", "Buyer", "10", "10", "10", "10"]
     specs = [s for s in INVOICE_FIELD_SET.specs if s.required and not s.indexed]
@@ -193,19 +197,16 @@ def test_worker_uses_reusable_extractor_with_injected_provider(api, monkeypatch)
         def text_reason(self, request):
             calls.append("text")
             identity = json.loads(request.evidence.split("\n")[0])
-            geometry = json.loads(request.evidence.split("Text geometry:\n")[1])
-            chars = geometry[0]["characters"]
-            content = "".join(c["text"] for c in chars)
+            index = request.evidence.split("Compact evidence index:\n", 1)[1]
+            index = index.split("\nIndependent rows:", 1)[0]
+            lines = [line.split("|", 3) for line in index.splitlines() if line]
             fields = {}
+            compact = []
             for spec, value in zip(specs, values, strict=True):
-                start = content.index(value)
-                span = chars[start : start + len(value)]
-                box = BBox(
-                    x0=min(c["bbox"]["x0"] for c in span),
-                    y0=min(c["bbox"]["y0"] for c in span),
-                    x1=max(c["bbox"]["x1"] for c in span),
-                    y1=max(c["bbox"]["y1"] for c in span),
-                )
+                evidence_id, _, geometry, _ = next(line for line in lines if line[3] == value)
+                x0, y0, x1, y1 = map(float, geometry.removeprefix("b=").split(","))
+                box = BBox(x0=x0, y0=y0, x1=x1, y1=y1)
+                compact.append({"path": spec.path, "value": value, "evidence_id": evidence_id})
                 fields[spec.path] = {
                     "kind": "scalar",
                     "value": value,
@@ -224,7 +225,7 @@ def test_worker_uses_reusable_extractor_with_injected_provider(api, monkeypatch)
                 "segment_id": identity["segment_id"],
                 "fields": fields,
             }
-            return ProviderResult(self.payload, "mock-observed-text")
+            return ProviderResult({"values": compact, "tables": {}}, "mock-observed-text")
 
         def vision_extract(self, request):
             calls.append("vision")
@@ -233,6 +234,15 @@ def test_worker_uses_reusable_extractor_with_injected_provider(api, monkeypatch)
                 field["provenance"]["reader"] = "vision"
             return ProviderResult(payload, "mock-observed-vision")
 
+    def compared_extract(provider, **kwargs):
+        # Clean digital text is deliberately text-only. Exercise the comparison
+        # route explicitly so this test still verifies agreement across readers.
+        kwargs["pages"] = tuple(
+            replace(page, features=PageFeatures(stamps=True)) for page in kwargs["pages"]
+        )
+        return actual_extract(provider, readers=(TextLayerReader(), VisionReader()), **kwargs)
+
+    monkeypatch.setattr(extract_segment, "extract", compared_extract)
     monkeypatch.setattr(extract_segment, "make_provider", lambda *a, **k: ObservedProvider())
     accepted = post_files(
         api, {"job_ref": "ACTUAL-EXTRACTOR"}, docs(make_pdf([["COMMERCIAL INVOICE", *values]]))

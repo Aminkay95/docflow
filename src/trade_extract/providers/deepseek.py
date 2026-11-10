@@ -138,6 +138,9 @@ class DeepSeekProvider:
             raise ProviderError("provider_cost_safety_ceiling_exhausted")
         body = {
             "model": model,
+            # Extraction/classification copy stated evidence; provider-default
+            # high-effort thinking can exhaust the budget before JSON is emitted.
+            "thinking": {"type": "disabled"},
             "max_tokens": max_output_tokens,
             "response_format": {"type": "json_object"},
             "messages": [

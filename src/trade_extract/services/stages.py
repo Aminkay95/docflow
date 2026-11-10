@@ -82,7 +82,10 @@ def type_system_prompt(document_type: str, schema_json: dict[str, Any]) -> str:
         raise ValueError(f"unsupported_type_stage:{document_type}")
     return (
         load_stage_text(stage_file)
-        + "\n"
+        + "\nResponse contract precedence: The supplied schema overrides all response-shape "
+        "instructions above. For evidence_values_v1 return only values (path, value, evidence_id) "
+        "and empty tables; never emit an envelope, provenance, boxes, optional fields or rows. "
+        "Cite exact evidence text; OCR values must equal whole spans. Omit unstated values.\n"
         + json.dumps(
             {"document_type": document_type, "schema": schema_json},
             sort_keys=True,

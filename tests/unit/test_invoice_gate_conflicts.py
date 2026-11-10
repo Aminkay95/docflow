@@ -350,3 +350,69 @@ def test_currency_registry_matches_current_six_snapshot(tmp_path, currency, expe
     )
     outcome = next(c for c in run_invoice_checks(changed) if c.code == "INV-006")
     assert outcome.status == expected
+
+
+def test_legacy_baseline_policy_is_explicitly_converted_and_fails_closed():
+    from trade_extract.services.decisions import effective_policy
+
+    legacy = {
+        "invoice_pass_enabled": True,
+        "trust_ramp_enabled": False,
+        "review_depth": {
+            name: "gate" if name == "commercial_invoice" else "full"
+            for name in (
+                "commercial_invoice",
+                "proforma_invoice",
+                "bill_of_lading",
+                "delivery_order",
+                "port_pass",
+                "custom_entry",
+                "verification_memo",
+                "packing_list",
+            )
+        },
+        "limits": {
+            "max_documents_per_group": 20,
+            "max_file_bytes": 100,
+            "max_pages_per_file": 20,
+            "max_pages_per_submission": 40,
+        },
+    }
+    policy, valid = effective_policy(legacy)
+    assert valid and policy.invoice_pass_enabled and policy.review_depth == "checks"
+    from trade_extract.db.models.policy import Policy
+
+    assert Policy(config=legacy).validated_gate() == policy
+    assert effective_policy(None)[1] is False
+    for key, value in [
+        ("trust_ramp_enabled", True),
+        ("trust_ramp_enabled", 0),
+        ("unknown", False),
+        ("limits", {"max_file_bytes": -1}),
+    ]:
+        bad = deepcopy(legacy)
+        bad[key] = value
+        assert effective_policy(bad)[1] is False
+    bad = deepcopy(legacy)
+    bad["review_depth"]["packing_list"] = "gate"
+    assert effective_policy(bad)[1] is False
+    assert effective_policy(policy.model_dump(mode="json"))[1]
+    outcome = decide_document(
+        document_type="packing_list",
+        status="extracted",
+        checks=[],
+        policy_id="pol",
+        policy_version=1,
+        config=legacy,
+    )
+    assert outcome["value"] == "review" and "review_depth:full" in outcome["reasons"]
+
+
+def test_bootstrap_emits_canonical_gate_policy():
+    from scripts.bootstrap import build_policy_config
+    from trade_extract.config import Settings
+    from trade_extract.domain.policy import GatePolicy
+
+    config = build_policy_config(Settings())
+    assert GatePolicy.model_validate(config).review_depth == "checks"
+    assert config["invoice_pass_enabled"] is True

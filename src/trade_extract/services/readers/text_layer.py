@@ -8,7 +8,7 @@ from trade_extract.domain.provenance import BBox, CoordinateSpace, Provenance, R
 from trade_extract.domain.readers import PageInput
 from trade_extract.providers.base import ModelProvider
 from trade_extract.schemas.registry import get_schema
-from trade_extract.services.local_extraction import compact_evidence, evidence_lines
+from trade_extract.services.local_extraction import EvidenceLine, compact_evidence, evidence_lines
 
 
 class TextLayerReader:
@@ -37,83 +37,102 @@ class TextLayerReader:
                 ),
             )
         )
-        if request.schema_json.get("contract") != "evidence_values_v1":
+        return reconstruct_values(result, request, lines, self.name)
+
+
+def reconstruct_values(
+    result: ProviderResult,
+    request: InferenceRequest,
+    lines: tuple[EvidenceLine, ...],
+    reader: ReaderKind,
+) -> ProviderResult:
+    """Reconstruct source-owned geometry; OCR citations require exact whole spans."""
+    if request.schema_json.get("contract") != "evidence_values_v1":
+        return result
+    raw = json.loads(result.raw_json) if isinstance(result.raw_json, str) else result.raw_json
+    if not isinstance(raw, dict) or "values" not in raw:
+        if (
+            reader == ReaderKind.TEXT_LAYER
+            and isinstance(raw, dict)
+            and "fields" in raw
+            and "source" in raw
+        ):
             return result
-        raw = json.loads(result.raw_json) if isinstance(result.raw_json, str) else result.raw_json
-        if not isinstance(raw, dict) or "values" not in raw:
-            if isinstance(raw, dict) and "fields" in raw and "source" in raw:
-                return result
-            raise ValueError("invalid_compact_provider_root")
-        if request.source_json is None:
-            raise ValueError("invalid_compact_provider_source")
-        compact_values = raw.get("values")
-        if not isinstance(compact_values, (list, dict)):
-            raise ValueError("invalid_compact_provider_values")
-        by_id = {line.evidence_id: line for line in lines}
-        spec = get_schema(request.document_type)
-        allowed = set(request.schema_json.get("allowed_scalar_paths", ()))
-        fields = {}
-        items = (
-            [
-                dict(item, path=path)
-                for path, item in compact_values.items()
-                if isinstance(item, dict)
-            ]
-            if isinstance(compact_values, dict)
-            else compact_values
+        raise ValueError("invalid_compact_provider_root")
+    if request.source_json is None:
+        raise ValueError("invalid_compact_provider_source")
+    compact_values = raw.get("values")
+    if not isinstance(compact_values, (list, dict)):
+        raise ValueError("invalid_compact_provider_values")
+    by_id = {line.evidence_id: line for line in lines}
+    spec = get_schema(request.document_type)
+    allowed = set(request.schema_json.get("allowed_scalar_paths", ()))
+    fields = {}
+    items = (
+        [dict(item, path=path) for path, item in compact_values.items() if isinstance(item, dict)]
+        if isinstance(compact_values, dict)
+        else compact_values
+    )
+    seen_paths: set[str] = set()
+    for item in items:
+        if not isinstance(item, dict):
+            raise ValueError("invalid_compact_provider_item")
+        try:
+            path, value, evidence_id = item["path"], item["value"], item["evidence_id"]
+        except KeyError:
+            raise ValueError("invalid_compact_provider_item") from None
+        if not all(isinstance(value, str) for value in (path, value, evidence_id)):
+            raise ValueError("invalid_compact_provider_item")
+        if path in seen_paths:
+            raise ValueError("invalid_compact_provider_duplicate_path")
+        seen_paths.add(path)
+        field_spec = spec.model.field_set.resolve(path)
+        line = by_id.get(evidence_id)
+        if path not in allowed:
+            continue
+        if field_spec is None or line is None or line.reader != reader:
+            continue
+        source_text = (
+            "".join(char.text for char in line.characters) if line.characters else line.text
         )
-        for item in items:
-            if not isinstance(item, dict):
-                raise ValueError("invalid_compact_provider_item")
-            try:
-                path, value, evidence_id = item["path"], item["value"], item["evidence_id"]
-            except KeyError:
-                raise ValueError("invalid_compact_provider_item") from None
-            if not all(isinstance(value, str) for value in (path, value, evidence_id)):
-                raise ValueError("invalid_compact_provider_item")
-            field_spec = spec.model.field_set.resolve(path)
-            line = by_id.get(evidence_id)
-            if path not in allowed:
-                continue
-            if field_spec is None or line is None or line.reader != ReaderKind.TEXT_LAYER:
-                continue
-            source_text = "".join(char.text for char in line.characters)
-            matches = (
-                list(re.finditer(re.escape(value), source_text, re.IGNORECASE)) if value else []
-            )
-            if len(matches) != 1:
-                continue
-            start, end = matches[0].span()
-            stated_value = source_text[start:end]
-            bbox = line.box_for(start, end)
-            if bbox is None:
-                continue
-            fields[path] = Field(
-                kind="scalar",
-                value=stated_value,
-                value_type=field_spec.value_type,
-                raw_text=stated_value,
-                agreement=Agreement.SINGLE_READER,
-                provenance=Provenance(
-                    page_index=line.page_index,
-                    page_number=line.page_index + 1,
-                    bbox=bbox,
-                    coordinate_space=CoordinateSpace.NORMALIZED_TOP_LEFT,
-                    reader=ReaderKind.TEXT_LAYER,
-                    model=result.model,
-                    document_hash=request.source_hash,
-                ),
-            ).model_dump(mode="json")
-        payload = {
-            "segment_id": request.segment_id,
-            "document_type": request.document_type,
-            "schema_version": spec.version,
-            "source": request.source_json,
-            "fields": fields,
-            "tables": raw.get("tables", {}),
-            "extension": {},
-        }
-        return replace(result, raw_json=payload, repair_json=raw)
+        matches = list(re.finditer(re.escape(value), source_text, re.IGNORECASE)) if value else []
+        if len(matches) != 1:
+            continue
+        start, end = matches[0].span()
+        stated_value = source_text[start:end]
+        bbox = (
+            line.bbox
+            if reader == ReaderKind.PADDLE and value == line.text
+            else line.box_for(start, end)
+        )
+        if bbox is None:
+            continue
+        fields[path] = Field(
+            kind="scalar",
+            value=stated_value,
+            value_type=field_spec.value_type,
+            raw_text=stated_value,
+            agreement=Agreement.SINGLE_READER,
+            provenance=Provenance(
+                page_index=line.page_index,
+                page_number=line.page_index + 1,
+                bbox=bbox,
+                coordinate_space=CoordinateSpace.NORMALIZED_TOP_LEFT,
+                reader=reader,
+                model=result.model,
+                document_hash=request.source_hash,
+            ),
+        ).model_dump(mode="json")
+    payload = {
+        "segment_id": request.segment_id,
+        "document_type": request.document_type,
+        "schema_version": spec.version,
+        "source": request.source_json,
+        "fields": fields,
+        "tables": raw.get("tables", {}),
+        "extension": {},
+    }
+    return replace(result, raw_json=payload, repair_json=raw)
 
 
 def verify_text_box(page: PageInput, text: str, bbox: BBox) -> bool:

@@ -87,6 +87,7 @@ def evidence_lines(pages: tuple[PageInput, ...]) -> tuple[EvidenceLine, ...]:
     """Build compact, stable line evidence without importing image/OCR libraries."""
     output: list[EvidenceLine] = []
     for page in pages:
+        page_line_count = 0
         if page.is_unreadable:
             continue
         if page.characters:
@@ -120,7 +121,7 @@ def evidence_lines(pages: tuple[PageInput, ...]) -> tuple[EvidenceLine, ...]:
                     continue
                 output.append(
                     EvidenceLine(
-                        evidence_id=f"p{page.page_index}l{len(output)}",
+                        evidence_id=f"p{page.page_index}l{page_line_count}",
                         page_index=page.page_index,
                         text=text,
                         bbox=_box(char.bbox for char in row),
@@ -128,18 +129,20 @@ def evidence_lines(pages: tuple[PageInput, ...]) -> tuple[EvidenceLine, ...]:
                         characters=tuple(row),
                     )
                 )
+                page_line_count += 1
         elif page.ocr:
             for span in page.ocr.spans:
                 if span.text.strip():
                     output.append(
                         EvidenceLine(
-                            evidence_id=f"p{page.page_index}l{len(output)}",
+                            evidence_id=f"p{page.page_index}l{page_line_count}",
                             page_index=page.page_index,
-                            text=span.text.strip(),
+                            text=span.text,
                             bbox=span.bbox,
                             reader=ReaderKind.PADDLE,
                         )
                     )
+                    page_line_count += 1
     return tuple(output)
 
 

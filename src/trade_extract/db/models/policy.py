@@ -8,7 +8,7 @@ from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
 from trade_extract.db.base import Base
-from trade_extract.domain.policy import GatePolicy
+from trade_extract.domain.policy import GatePolicy, parse_gate_policy
 
 
 class Policy(Base):
@@ -45,4 +45,4 @@ class Policy(Base):
 
     def validated_gate(self) -> GatePolicy:
         """Validate before activation; decision execution separately fails closed on bad rows."""
-        return GatePolicy.model_validate(self.config)
+        return parse_gate_policy(self.config)

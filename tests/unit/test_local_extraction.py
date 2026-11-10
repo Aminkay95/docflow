@@ -1,3 +1,5 @@
+import pytest
+
 from trade_extract.config import Settings
 from trade_extract.domain.hashing import document_hash
 from trade_extract.domain.inference import InferenceRequest, ProviderResult
@@ -160,3 +162,190 @@ def test_compact_provider_value_is_expanded_to_verified_provenance():
     assert field["value"] == "INV-2048"
     assert field["provenance"]["bbox"] != {"x0": 0, "y0": 0, "x1": 1, "y1": 1}
     assert result.repair_json["values"][0]["evidence_id"] == "p0l0"
+
+
+def test_ocr_compact_values_keep_only_exact_whole_span_and_stable_identity():
+    from dataclasses import replace
+
+    from tests.unit.test_routing_tables_paddle import page as scan_page
+    from trade_extract.domain.provenance import ReaderKind
+    from trade_extract.services.readers.paddle import PaddleReader
+
+    reader = PaddleReader(
+        backend=lambda _: [
+            {
+                "type": "text",
+                "res": [
+                    {"text": "INV-2048", "text_region": [[10, 10], [100, 10], [100, 30], [10, 30]]}
+                ],
+            }
+        ]
+    )
+    scan = scan_page()
+    scan = replace(scan, ocr=reader.inspect(scan), characters=_page(["TEXT LAYER"]).characters)
+    source = _source()
+    request = InferenceRequest(
+        "commercial_invoice",
+        source.document_hash,
+        {"contract": "evidence_values_v1", "allowed_scalar_paths": ["invoice.number"]},
+        '{"source":"original","segment_id":"segment"}\nCompact evidence index:\np0l0|TEXT LAYER'
+        "\nIndependent rows: []",
+        segment_id="segment",
+        source_json=source.model_dump(mode="json"),
+    )
+    for value, evidence_id, expected in [
+        ("INV-2048", "p0l0", True),
+        ("INV-2048", "missing", False),
+        ("invented", "p0l0", False),
+        ("2048", "p0l0", False),
+    ]:
+        provider = MockProvider(
+            {
+                ("commercial_invoice", source.document_hash): [
+                    ProviderResult(
+                        {
+                            "values": [
+                                {
+                                    "path": "invoice.number",
+                                    "value": value,
+                                    "evidence_id": evidence_id,
+                                }
+                            ],
+                            "tables": {},
+                        },
+                        "mock",
+                    )
+                ]
+            }
+        )
+        result = reader.read(provider, request, (scan,))
+        assert bool(result.raw_json["fields"]) is expected
+        transmitted = provider.requests[0]
+        assert transmitted.schema_json["contract"] == "evidence_values_v1"
+        assert transmitted.segment_id == "segment"
+        assert transmitted.source_json == request.source_json
+        assert '"source":"original"' in transmitted.evidence
+        assert "Independent rows: []" in transmitted.evidence
+        assert transmitted.evidence.count("Compact evidence index:") == 1
+        assert transmitted.evidence.count("p0l0|") == 1
+        assert "TEXT LAYER" not in transmitted.evidence
+        assert "INV-2048" in transmitted.evidence
+        if expected:
+            field = result.raw_json["fields"]["invoice.number"]
+            assert field["provenance"]["reader"] == ReaderKind.PADDLE
+            assert field["provenance"]["bbox"] == scan.ocr.spans[0].bbox.model_dump()
+            assert result.raw_json["source"] == source.model_dump(mode="json")
+    other = replace(_page(["another page"]), page_index=1)
+    assert evidence_lines((other, scan))[-1].evidence_id == "p0l0"
+
+
+def test_provider_exhaustion_retains_verified_fields_for_review():
+    from trade_extract.domain.inference import ProviderError
+
+    class ExhaustedProvider:
+        name = "exhausted"
+
+        def text_reason(self, request):
+            raise ProviderError("provider_call_budget_exhausted")
+
+    outcome = extract(
+        ExhaustedProvider(),
+        document_type="commercial_invoice",
+        source=_source(),
+        pages=(_page(["Invoice No: INV-2048"]),),
+        readers=(TextLayerReader(),),
+        settings=Settings(provider="mock"),
+    )
+    assert outcome.document.status == "review_required"
+    assert outcome.document.fields["invoice.number"].value == "INV-2048"
+    assert "provider_call_budget_exhausted" in outcome.errors
+
+
+@pytest.mark.parametrize(
+    "value,evidence_id,accepted",
+    [
+        ("INV-2048", "p0l0", True),
+        ("INV-2048", "unknown", False),
+        ("invented", "p0l0", False),
+        ("2048", "p0l0", False),
+    ],
+)
+def test_ocr_extraction_route_requests_compact_scalar_contract(value, evidence_id, accepted):
+    from dataclasses import replace
+
+    from tests.unit.test_routing_tables_paddle import page as scan_page
+    from trade_extract.domain.readers import PageFeatures
+    from trade_extract.services.readers.paddle import PaddleReader
+
+    reader = PaddleReader(
+        backend=lambda _: [
+            {
+                "type": "text",
+                "res": [
+                    {"text": "INV-2048", "text_region": [[10, 10], [100, 10], [100, 30], [10, 30]]}
+                ],
+            }
+        ]
+    )
+    scan = replace(scan_page(), features=PageFeatures(flat_scan=True, dense_table=False))
+    provider = MockProvider(
+        {
+            ("commercial_invoice", _source().document_hash): [
+                ProviderResult(
+                    {
+                        "values": [
+                            {"path": "invoice.number", "value": value, "evidence_id": evidence_id}
+                        ],
+                        "tables": {},
+                    },
+                    "mock",
+                )
+            ]
+        }
+    )
+    outcome = extract(
+        provider,
+        document_type="commercial_invoice",
+        source=_source(),
+        pages=(scan,),
+        readers=(reader,),
+        settings=Settings(provider="mock"),
+    )
+    if accepted:
+        assert outcome.document.fields["invoice.number"].value == "INV-2048"
+    else:
+        assert outcome.status == "extraction_failed" or outcome.document.status == "review_required"
+        assert outcome.document is None or "invoice.number" not in outcome.document.fields
+    assert provider.requests[0].schema_json["contract"] == "evidence_values_v1"
+    assert provider.requests[0].evidence.count("p0l0|") == 1
+
+
+@pytest.mark.parametrize("reader_kind", ["paddle", "text_layer"])
+def test_compact_duplicate_paths_are_rejected_and_envelope_compatibility_is_reader_specific(
+    reader_kind,
+):
+    from trade_extract.domain.provenance import ReaderKind
+    from trade_extract.services.readers.text_layer import reconstruct_values
+
+    reader = ReaderKind(reader_kind)
+    request = InferenceRequest(
+        "commercial_invoice",
+        _source().document_hash,
+        {"contract": "evidence_values_v1", "allowed_scalar_paths": ["invoice.number"]},
+        "",
+        source_json=_source().model_dump(mode="json"),
+    )
+    item = {"path": "invoice.number", "value": "INV-2048", "evidence_id": "p0l0"}
+    with pytest.raises(ValueError, match="invalid_compact_provider_duplicate_path"):
+        reconstruct_values(
+            ProviderResult({"values": [item, item]}, "mock"),
+            request,
+            evidence_lines((_page(["INV-2048"]),)),
+            reader,
+        )
+    envelope = ProviderResult({"fields": {}, "source": request.source_json}, "mock")
+    if reader == ReaderKind.PADDLE:
+        with pytest.raises(ValueError, match="invalid_compact_provider_root"):
+            reconstruct_values(envelope, request, (), reader)
+    else:
+        assert reconstruct_values(envelope, request, (), reader) is envelope

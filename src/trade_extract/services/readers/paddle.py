@@ -372,6 +372,37 @@ class PaddleReader:
         ]
         if not evidence:
             return None
+        if request.schema_json.get("contract") == "evidence_values_v1":
+            from trade_extract.services.local_extraction import compact_evidence, evidence_lines
+            from trade_extract.services.readers.text_layer import reconstruct_values
+
+            validated = {item.page_index: item for item in evidence}
+            lines = evidence_lines(
+                tuple(
+                    replace(page, characters=(), ocr=validated[page.page_index])
+                    for page in pages
+                    if page.page_index in validated
+                )
+            )
+            # Replace the service's mixed-source index with this reader's OCR-only
+            # index. Keep source identity and independent table inventory metadata.
+            prefix, marker, previous_index = request.evidence.partition("Compact evidence index:\n")
+            _, inventory_marker, inventory = previous_index.partition("\nIndependent rows:")
+            current = replace(
+                request,
+                pages=(),
+                evidence=(prefix if marker else request.evidence)
+                + "Compact evidence index:\n"
+                + compact_evidence(
+                    lines,
+                    max_characters=(
+                        self.settings.provider_max_evidence_characters_per_page * max(1, len(pages))
+                    ),
+                )
+                + (inventory_marker + inventory if inventory_marker else "")
+                + "\nOCR values must equal a whole span.",
+            )
+            return reconstruct_values(provider.text_reason(current), request, lines, self.name)
         return provider.text_reason(
             replace(
                 request,
