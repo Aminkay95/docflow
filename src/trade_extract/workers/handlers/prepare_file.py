@@ -28,6 +28,7 @@ from trade_extract.domain.hashing import document_hash, document_idempotency_key
 from trade_extract.domain.ids import new_id
 from trade_extract.services.conditioning import condition_page, diagnostics
 from trade_extract.services.page_model import IMAGE_CONTENT_TYPE, render_container
+from trade_extract.services.progress import report
 from trade_extract.services.segmentation import SegmentSpec, segment_pages
 from trade_extract.services.storage import (
     ObjectStorage,
@@ -185,6 +186,7 @@ def handle(
     if not stored_pages:
         raise errors.processing_failed(file_row.filename, "the container produced no pages")
 
+    report(session, "identifying")
     try:
         specs = segment_pages(
             [page.text for page in stored_pages],

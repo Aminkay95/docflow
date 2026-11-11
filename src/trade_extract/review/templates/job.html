@@ -34,12 +34,26 @@
   </div>
 </section>
 
-{% if processing %}
-<div class="notice notice-info notice-live" data-autorefresh="4000" role="status">
-  <span class="spinner" aria-hidden="true"></span>
-  <p>Documents are being processed. Updates pause while editing.</p>
-</div>
-{% endif %}
+<section class="card extraction-progress" data-job-progress="/review/jobs/{{ job.id }}/progress" data-progress-version="{{ progress.version }}" data-processing="{{ 'true' if processing else 'false' }}" data-started-at="{{ progress.started_at }}" data-terminal-at="{{ progress.terminal_at or '' }}">
+  <header class="card-header">
+    <span><span class="spinner" data-progress-spinner {% if not processing %}hidden{% endif %} aria-hidden="true"></span> <strong data-progress-title aria-live="polite">{{ progress.title }}</strong></span>
+  </header>
+  <div class="card-body stack">
+    <p data-progress-counts>{{ progress.documents_ready }} of {{ progress.documents }} documents processed · {{ progress.fields }} extracted fields · {{ progress.reviews }} remaining reviews</p>
+    <p class="text-muted"><span data-progress-elapsed></span> <span data-progress-updated>{% if progress.updated_at %}Last stage update: {{ progress.updated_at }}{% elif processing %}Waiting for the worker's first stage update.{% else %}Detailed stage times are unavailable for this job.{% endif %}</span></p>
+    <details class="disclosure" data-progress-history {% if processing %}open{% endif %}>
+      <summary>Processing stage history</summary>
+      <ol class="progress-timeline" data-progress-stages>
+        {% for stage in progress.stages %}<li data-stage-status="{{ stage.status }}"><span>{{ stage.label }}</span><small>{{ 'In progress' if stage.status == 'active' else 'Stopped before completion' if stage.status == 'stopped' else '✓ Completed in earlier work' if stage.status == 'partial' else '✓ Completed' }}{% if stage.at %} · <time datetime="{{ stage.at }}">{{ stage.at }}</time>{% endif %}</small></li>{% endfor %}
+      </ol>
+    </details>
+    <ul class="progress-files" data-progress-files>{% for file in progress.files %}<li>{{ file.name }} <span class="text-muted">{{ file.status | humanize }}</span></li>{% endfor %}</ul>
+    <p data-progress-guidance>{% if processing %}Processing continues if you leave this page. Available results and source pages remain usable below.{% elif progress.state == 'failed' %}Available results are retained below. Check the source and use the existing review or upload actions to recover.{% else %}Available results and source pages are shown below.{% endif %}</p>
+    <p class="inline-status" role="status" aria-live="polite" data-progress-connection></p>
+    <button type="button" class="btn btn-secondary" data-progress-review {% if processing %}hidden{% endif %}>{{ 'Review results' if progress.state == 'review' else 'View results' }}</button>
+    <p class="text-muted" data-progress-draft hidden>New results are available. Your unsaved corrections are retained. Save or discard them before refreshing this workspace.</p>
+  </div>
+</section>
 
 {% set open_conflicts = conflicts | selectattr('0.status', 'equalto', 'open') | list %}
 {% if open_conflicts %}
@@ -72,7 +86,7 @@
   <p class="workspace-tip">{{ icon('circle-dot', 14) }}<span>Select a field to preview its source evidence.</span></p>
 </div>
 
-<div class="workspace job-workspace" data-workspace data-document-id="{{ selected.id }}" data-page-start="{{ selected.page_start }}" data-page-end="{{ selected.page_end }}">
+<div class="workspace job-workspace" id="job-review-workspace" tabindex="-1" data-workspace data-document-id="{{ selected.id }}" data-page-start="{{ selected.page_start }}" data-page-end="{{ selected.page_end }}">
   <section class="card fields-panel">
     <header class="card-header">
       <div>
@@ -184,11 +198,11 @@
   </section>
 </div>
 {% else %}
-<div class="card">
+<div class="card" id="job-review-workspace" tabindex="-1">
   <div class="empty">
     <span class="empty-icon">{{ icon('files', 20) }}</span>
-    <p class="empty-title">No documents yet</p>
-    <p class="empty-copy">Documents appear here after the submission is accepted.</p>
+    <p class="empty-title">{{ "Preparing your documents" if processing else "No documents yet" }}</p>
+    <p class="empty-copy">{{ "Source previews become available after source pages are prepared. Processing continues if you leave." if processing else "Documents appear here after the submission is accepted." }}</p>
   </div>
 </div>
 {% endif %}

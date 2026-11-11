@@ -37,6 +37,7 @@ from trade_extract.domain.ids import new_id
 from trade_extract.review.auth import password_hash, principal, signer, verify_password
 from trade_extract.review.line_items import invoice_line_items
 from trade_extract.review.mail import send_password_reset_email
+from trade_extract.review.progress import project as job_progress
 from trade_extract.services import ingest
 from trade_extract.services.jobs import emit_terminal_result, job_result, read_document
 from trade_extract.services.limits import (
@@ -876,6 +877,18 @@ async def create_job(
     )
 
 
+@router.get("/jobs/{job_id}/progress")
+def progress_detail(
+    job_id: str,
+    reviewer: Reviewer = Depends(principal),
+    session: Session = Depends(get_session),
+) -> JSONResponse:
+    job = session.get(Job, job_id)
+    if job is None:
+        raise HTTPException(404)
+    return JSONResponse(job_progress(session, job), headers={"Cache-Control": "no-store"})
+
+
 @router.get("/jobs/{job_id}")
 def job_detail(
     request: Request,
@@ -947,6 +960,7 @@ def job_detail(
     open_reviews = sum(review_counts(session, job.id))
     pending = any(row.status in ("queued", "processing") for row in submissions)
     result = job_result(session, job.id, job.client_id)
+    progress = job_progress(session, job)
     return render(
         request,
         "Job details",
@@ -960,13 +974,14 @@ def job_detail(
         active_tab=active_tab,
         **workspace,
         has_fields=any(document_fields.values()),
-        processing=job.status in ("queued", "processing")
-        or any(document.status in ("queued", "processing") for document in documents),
+        progress=progress,
+        processing=progress["processing"],
         conflicts=conflicts,
         items=items,
         submissions=submissions,
         result_json=result,
         ready_to_push=job.status == "completed"
+        and not progress["processing"]
         and not pending
         and not open_reviews
         and not any(row.status in ("queued", "processing") for row in documents)
@@ -1009,6 +1024,7 @@ def finish_job(
         job.status != "completed"
         or pending
         or pending_document
+        or job_progress(session, job)["processing"]
         or conflict
         or sum(review_counts(session, job.id))
     ):

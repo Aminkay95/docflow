@@ -64,15 +64,18 @@ def test_complete_conventional_invoice_uses_local_fast_path_without_provider():
     )
     source = _source()
     provider = MockProvider()
+    stages = []
     result = extract(
         provider,
         document_type="commercial_invoice",
         source=source,
         pages=(page,),
         settings=Settings(provider="mock"),
+        progress=stages.append,
     )
     assert result.status == "extracted"
     assert not provider.requests
+    assert stages == ["reading", "extracting"]
     assert result.document.fields["invoice.number"].value == "INV-2048"
     assert result.document.fields["totals.payable_amount"].value == "1392.00"
     assert all(

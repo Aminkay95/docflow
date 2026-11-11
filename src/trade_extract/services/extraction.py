@@ -152,9 +152,12 @@ def extract(
     max_repairs: int | None = None,
     select: SelectionPolicy = stable_selection,
     settings: Settings | None = None,
+    progress: Callable[[str], None] | None = None,
     _structure_pass: int = 0,
     _provider_calls: list[int] | None = None,
 ) -> ExtractionOutcome:
+    if progress:
+        progress("reading")
     routes: tuple[Any, ...] = ()
     inventory = TableInventory()
     diagnostics: list[str] = []
@@ -251,6 +254,8 @@ def extract(
     usable = tuple(prepared)
     page_map = {p.page_index: p for p in usable}
     lines = evidence_lines(usable)
+    if progress:
+        progress("extracting")
     local_candidates = extract_local(document_type, spec, source.document_hash, lines)
     candidates: list[FieldCandidate] = list(local_candidates)
     diagnostics.extend(f"local:{candidate.field_path}" for candidate in local_candidates)
@@ -721,6 +726,7 @@ def extract(
             max_repairs=max_repairs,
             select=select,
             settings=settings,
+            progress=progress,
             _structure_pass=_structure_pass + 1,
             _provider_calls=_provider_calls,
         )

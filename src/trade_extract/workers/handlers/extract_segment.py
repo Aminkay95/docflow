@@ -29,6 +29,7 @@ from trade_extract.schemas.base import EnvelopeSource
 from trade_extract.services.checks import run_invoice_checks
 from trade_extract.services.decisions import decide_document, effective_policy
 from trade_extract.services.extraction import extract
+from trade_extract.services.progress import report
 from trade_extract.services.readers.paddle import PaddleReader
 from trade_extract.services.segmentation import classify_page
 from trade_extract.services.storage import build_storage
@@ -211,7 +212,9 @@ def handle(session: Session, task: JobTask, *, settings: Settings, clock: Clock)
             pages=tuple(inputs),
             segment_id=identity["segment_id"],
             settings=settings,
+            progress=lambda stage: report(session, stage),
         )
+    report(session, "validating")
     status = "failed" if outcome.status == "extraction_failed" else outcome.status
     gate, _ = effective_policy(config)
     checks = (

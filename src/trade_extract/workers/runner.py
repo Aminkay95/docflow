@@ -15,6 +15,7 @@ from trade_extract.db.models.task import JobTask
 from trade_extract.domain.clock import Clock, SystemClock
 from trade_extract.domain.errors import DomainError
 from trade_extract.logging import configure_logging, get_logger
+from trade_extract.services import progress
 from trade_extract.services import queue as queue_service
 from trade_extract.services.jobs import emit_terminal_result, job_result
 from trade_extract.workers.handlers import (
@@ -67,11 +68,21 @@ def run_once(
     task_id = task.id
     job_id = task.job_id
     claimed_owner, claimed_attempt = task.locked_by, task.attempts
+    claimed_at = task.locked_at
+
+    def report(stage):
+        progress.write(
+            session_factory_, task_id, claimed_owner, claimed_attempt, claimed_at, clock, stage
+        )
+
     try:
+        if task.kind in progress.KINDS:
+            report(progress.KINDS[task.kind])
         with session_factory_() as session:
             claimed = session.get(JobTask, task_id)
             if claimed is None:
                 return True
+            session.info["extraction_progress"] = report
             handler = handler_map[claimed.kind]
             handler(session, claimed, settings=settings, clock=clock)
             completed_job = session.info.pop("pipeline_result_job", None)

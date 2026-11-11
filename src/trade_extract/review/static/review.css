@@ -1827,3 +1827,19 @@ pre {
     opacity: 0.5;
   }
 }
+
+/* Persisted extraction stage timeline */
+.extraction-progress { margin-bottom: 1.25rem; }
+.extraction-progress .card-header > span:first-child { display: flex; align-items: center; gap: .65rem; }
+.progress-timeline { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: .85rem; padding: 0; list-style: none; }
+.progress-timeline li { border-left: 3px solid var(--border, #d6dce5); padding: .4rem .75rem; display: grid; gap: .35rem; }
+.progress-timeline li[data-stage-status="active"] { border-color: var(--primary, #315de0); font-weight: 600; }
+.progress-timeline small { font-weight: 400; overflow-wrap: anywhere; }
+.progress-files { padding-left: 1.2rem; overflow-wrap: anywhere; }
+.progress-files li { margin: .35rem 0; }
+.progress-files span { margin-left: .5rem; }
+@media (max-width: 600px) {
+ .extraction-progress .card-header { align-items: flex-start; flex-direction: column; gap: .5rem; }
+ .progress-timeline { grid-template-columns: 1fr; }
+}
+@media (prefers-reduced-motion: reduce) { .extraction-progress .spinner { animation: none; } }

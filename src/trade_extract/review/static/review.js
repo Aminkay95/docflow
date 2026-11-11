@@ -626,6 +626,122 @@ document.addEventListener('submit', async event => {
 
 /* ---------- Live job status ---------- */
 
+const progressPanel = query('[data-job-progress]');
+if (progressPanel) {
+  let processing = progressPanel.dataset.processing === 'true';
+  let timer = null;
+  let controller = null;
+  let stopped = false;
+  let reconnectDelay = 4000;
+  const initialVersion = progressPanel.dataset.progressVersion;
+  const inside = selector => progressPanel.querySelector(selector);
+  const connection = inside('[data-progress-connection]');
+  inside('[data-progress-review]').addEventListener('click', () => {
+    const workspace = query('#job-review-workspace');
+    if (workspace) {
+      workspace.focus({preventScroll: true});
+      workspace.scrollIntoView({behavior: 'auto', block: 'start'});
+    }
+  });
+  const setText = (selector, value) => {
+    const node = inside(selector);
+    if (node.textContent !== value) node.textContent = value;
+  };
+  const elapsed = () => {
+    const start = Date.parse(progressPanel.dataset.startedAt);
+    const end = progressPanel.dataset.terminalAt ? Date.parse(progressPanel.dataset.terminalAt) : processing ? Date.now() : NaN;
+    const seconds = Math.max(0, Math.floor((end - start) / 1000));
+    setText('[data-progress-elapsed]', Number.isFinite(seconds) ? 'Elapsed since latest upload: ' + Math.floor(seconds / 60) + 'm ' + seconds % 60 + 's.' : 'Processing time unavailable.');
+  };
+  const renderProgress = data => {
+    processing = data.processing;
+    progressPanel.dataset.startedAt = data.started_at || progressPanel.dataset.startedAt;
+    progressPanel.dataset.terminalAt = data.terminal_at || '';
+    setText('[data-progress-title]', data.title);
+    inside('[data-progress-spinner]').hidden = !processing;
+    setText('[data-progress-counts]', data.documents_ready + ' of ' + data.documents + ' documents processed · ' + data.fields + ' extracted fields · ' + data.reviews + ' remaining reviews');
+    setText('[data-progress-updated]', data.updated_at ? 'Last stage update: ' + new Date(data.updated_at).toLocaleString() : processing ? "Waiting for the worker's first stage update." : 'Detailed stage times are unavailable for this job.');
+    const list = inside('[data-progress-stages]');
+    list.replaceChildren();
+    for (const stage of data.stages) {
+      const row = document.createElement('li');
+      row.dataset.stageStatus = stage.status;
+      const label = document.createElement('span');
+      label.textContent = stage.label;
+      const detail = document.createElement('small');
+      detail.textContent = (stage.status === 'active' ? 'In progress' : stage.status === 'stopped' ? 'Stopped before completion' : stage.status === 'partial' ? '✓ Completed in earlier work' : '✓ Completed') + (stage.at ? ' · ' + new Date(stage.at).toLocaleString() : '');
+      row.append(label, detail);
+      list.append(row);
+    }
+    const files = inside('[data-progress-files]');
+    files.replaceChildren();
+    for (const file of data.files) {
+      const row = document.createElement('li');
+      row.textContent = file.name + ' · ' + file.status.replaceAll('_', ' ');
+      files.append(row);
+    }
+    setText('[data-progress-guidance]', processing ? 'Processing continues if you leave this page. Available results and source pages remain usable below.' : data.state === 'failed' ? 'Available results are retained below. Check the source and use the existing review or upload actions to recover.' : 'Available results and source pages are shown below.');
+    const changed = data.version !== initialVersion;
+    const draft = dirtyReviewForms.size > 0;
+    inside('[data-progress-draft]').hidden = !(changed && draft);
+    const review = inside('[data-progress-review]');
+    review.hidden = processing && !changed;
+    review.textContent = data.state === 'review' ? 'Review results' : 'View results';
+    elapsed();
+    if (changed && !draft) {
+      stopped = true;
+      location.reload();
+    } else if (!processing) {
+      stopped = true;
+      inside('[data-progress-history]').open = false;
+    }
+  };
+  const schedule = () => {
+    window.clearTimeout(timer);
+    if (!stopped && processing && !document.hidden && navigator.onLine !== false) timer = window.setTimeout(poll, reconnectDelay);
+  };
+  const poll = async () => {
+    if (controller || stopped || document.hidden || navigator.onLine === false) return;
+    controller = new AbortController();
+    const timeout = window.setTimeout(() => controller?.abort(), 12000);
+    try {
+      const response = await fetch(progressPanel.dataset.jobProgress, {headers: {Accept: 'application/json'}, cache: 'no-store', credentials: 'same-origin', signal: controller.signal});
+      if (response.status === 401 || response.status === 403 || response.redirected) {
+        stopped = true;
+        connection.textContent = 'Your session needs attention. Sign in again, then reload to resume updates. Unsaved corrections remain on this page.';
+        return;
+      }
+      if (!response.ok) throw new Error('progress_unavailable');
+      const data = await response.json();
+      connection.textContent = '';
+      reconnectDelay = 4000;
+      renderProgress(data);
+    } catch (error) {
+      if (!document.hidden && navigator.onLine !== false) {
+        connection.textContent = 'Live updates interrupted. Showing the last known state; reconnecting automatically.';
+        reconnectDelay = Math.min(30000, reconnectDelay * 2);
+      }
+    } finally {
+      window.clearTimeout(timeout);
+      controller = null;
+      schedule();
+    }
+  };
+  document.addEventListener('visibilitychange', () => {
+    if (document.hidden) { window.clearTimeout(timer); controller?.abort(); }
+    else { elapsed(); schedule(); }
+  });
+  window.addEventListener('offline', () => {
+    window.clearTimeout(timer);
+    controller?.abort();
+    connection.textContent = 'You are offline. Showing the last known state; updates resume when connected.';
+  });
+  window.addEventListener('online', () => { reconnectDelay = 4000; schedule(); });
+  const tick = () => { elapsed(); if (!stopped && processing) window.setTimeout(tick, 1000); };
+  tick();
+  schedule();
+}
+
 const live = query('[data-autorefresh]');
 if (live) {
   const delay = Number(live.dataset.autorefresh) || 4000;

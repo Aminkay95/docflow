@@ -148,3 +148,11 @@ status: open
 - source_spec: `_bmad-output/implementation-artifacts/spec-recover-failed-deepseek-extraction.md`
   summary: Preserve first-pass verified fields when table redispatch returns a partial document containing fewer fields.
   evidence: Baseline extract() returned the recursive outcome directly; the recovery fix restores prior evidence only when the recursive outcome has no document. A partial recursive document may omit earlier fields or disagreements. Add a merge across both candidate sets with table/provenance validation and regression coverage before relying on partial redispatch evidence retention.
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-job-extraction-progress.md`
+  summary: Detect new submissions initiated elsewhere after an open job page has stopped polling at a terminal state.
+  evidence: Baseline job pages also refreshed only while processing. The active timeline stops on terminal results; a later submission requires refreshing/reopening the page. Consider a visibility/focus probe without introducing indefinite terminal polling.
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-job-extraction-progress.md`
+  summary: Complete desktop/mobile visual inspection of extraction progress when browser URL verification is available.
+  evidence: Browser access host was unavailable and native CUA stopped because it could not confidently determine the Windows browser URL. Automated behavior, markup, lint and type checks passed, but no screenshots/layout inspection were obtained; no alternate UI automation was attempted.

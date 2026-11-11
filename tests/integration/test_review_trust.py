@@ -671,7 +671,8 @@ def test_internal_upload_creates_job_and_shows_extracted_values(api, tmp_path, m
     assert accepted["submitted_documents"] == 1
     pending = api.client.get(accepted["job_url"])
     assert pending.status_code == 200
-    assert 'data-autorefresh="4000"' in pending.text
+    assert 'data-job-progress=' in pending.text
+    assert 'data-autorefresh=' not in pending.text
     drain(api)
 
     page = api.client.get(accepted["job_url"])
