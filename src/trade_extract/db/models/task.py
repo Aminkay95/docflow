@@ -24,10 +24,12 @@ class JobTask(Base):
     __tablename__ = "job_tasks"
     __table_args__ = (
         CheckConstraint(
-            "kind IN ('prepare_file', 'segment_file', 'extract_segment', "
-            "'finalize_submission', 'deliver_webhook', 'purge_documents', 'recover_stale')",
+            "kind IN ('prepare_file', 'segment_file', 'classify_segment', 'extract_segment', "
+            "'finalize_submission', 'deliver_webhook', 'purge_documents', 'recover_stale', "
+            "'import_email')",
             name="ck_job_tasks_kind",
         ),
+        CheckConstraint("job_id IS NOT NULL OR kind = 'import_email'", name="ck_job_tasks_job"),
         CheckConstraint(
             "status IN ('queued', 'running', 'succeeded', 'failed', 'dead')",
             name="ck_job_tasks_status",
@@ -53,7 +55,7 @@ class JobTask(Base):
     )
 
     id: Mapped[str] = mapped_column(Text, primary_key=True)
-    job_id: Mapped[str] = mapped_column(ForeignKey("jobs.id", ondelete="CASCADE"), nullable=False)
+    job_id: Mapped[str | None] = mapped_column(ForeignKey("jobs.id", ondelete="CASCADE"))
     submission_id: Mapped[str | None] = mapped_column(
         ForeignKey("submissions.id", ondelete="CASCADE"), nullable=True
     )

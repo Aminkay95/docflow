@@ -36,12 +36,32 @@
 
 <section class="card extraction-progress" data-job-progress="/review/jobs/{{ job.id }}/progress" data-progress-version="{{ progress.version }}" data-processing="{{ 'true' if processing else 'false' }}" data-started-at="{{ progress.started_at }}" data-terminal-at="{{ progress.terminal_at or '' }}">
   <header class="card-header">
-    <span><span class="spinner" data-progress-spinner {% if not processing %}hidden{% endif %} aria-hidden="true"></span> <strong data-progress-title aria-live="polite">{{ progress.title }}</strong></span>
+    <strong data-progress-title aria-live="polite">{{ 'Extracting details' if processing else progress.title }}</strong>
   </header>
   <div class="card-body stack">
     <p data-progress-counts>{{ progress.documents_ready }} of {{ progress.documents }} documents processed · {{ progress.fields }} extracted fields · {{ progress.reviews }} remaining reviews</p>
     <p class="text-muted"><span data-progress-elapsed></span> <span data-progress-updated>{% if progress.updated_at %}Last stage update: {{ progress.updated_at }}{% elif processing %}Waiting for the worker's first stage update.{% else %}Detailed stage times are unavailable for this job.{% endif %}</span></p>
-    <details class="disclosure" data-progress-history {% if processing %}open{% endif %}>
+    <div class="extraction-steps" data-progress-workflow {% if not processing and progress.state != 'failed' %}hidden{% endif %}>
+      <div class="extraction-meter">
+        <progress data-progress-bar aria-label="Extraction steps completed" max="{{ progress.steps | length }}" value="{{ progress.steps_completed }}"></progress>
+        <span class="text-muted" data-progress-step-count>{{ progress.steps_completed }} of {{ progress.steps | length }} complete</span>
+      </div>
+      <ol class="extraction-step-list" aria-label="Extraction steps">
+        {% for step in progress.steps %}
+        <li data-progress-step="{{ step.id }}" data-step-status="{{ step.status }}"{% if step.status == 'active' %} aria-current="step"{% endif %}>
+          <span class="extraction-step-icon" aria-hidden="true">
+            <span class="spinner" data-step-spinner {% if step.status != 'active' %}hidden{% endif %}></span>
+            <span class="extraction-step-marker" data-step-marker {% if step.status == 'active' %}hidden{% endif %}>
+              <span class="extraction-step-check">{{ icon('check', 13) }}</span><span class="extraction-step-stop">!</span>
+            </span>
+          </span>
+          <span class="extraction-step-label">{{ step.label }}</span>
+          <small data-step-label>{{ step.status_label }}</small>
+        </li>
+        {% endfor %}
+      </ol>
+    </div>
+    <details class="disclosure" data-progress-history>
       <summary>Processing stage history</summary>
       <ol class="progress-timeline" data-progress-stages>
         {% for stage in progress.stages %}<li data-stage-status="{{ stage.status }}"><span>{{ stage.label }}</span><small>{{ 'In progress' if stage.status == 'active' else 'Stopped before completion' if stage.status == 'stopped' else '✓ Completed in earlier work' if stage.status == 'partial' else '✓ Completed' }}{% if stage.at %} · <time datetime="{{ stage.at }}">{{ stage.at }}</time>{% endif %}</small></li>{% endfor %}
@@ -90,27 +110,29 @@
   <section class="card fields-panel">
     <header class="card-header">
       <div>
-        <h2 class="card-title">{{ 'Line items' if active_tab == 'items' else 'Extracted fields' }}</h2>
-        <p class="card-subtitle">{% if active_tab == 'items' %}Click a cell to edit it and view its source page.{% else %}Click a value to edit it and view its source page.{% endif %}</p>
+        <h2 class="card-title">{{ table_panels[active_tab].label if active_tab in table_panels else 'Extracted fields' }}</h2>
+        <p class="card-subtitle">{% if active_tab in table_panels %}Click a cell to edit it and view its source page.{% else %}Click a value to edit it and view its source page.{% endif %}</p>
       </div>
-      {% if not line_item_table %}
+      {% if not table_panels %}
       <span class="badge badge-neutral">{{ scalar_fields | length }} field{{ '' if scalar_fields | length == 1 else 's' }}</span>
       {% endif %}
     </header>
 
-    {% if line_item_table %}
-    <nav class="tab-list card-tabs" aria-label="Invoice document data">
+    {% if table_panels %}
+    <nav class="tab-list card-tabs" aria-label="{{ 'Invoice document data' if selected.document_type in ('commercial_invoice', 'proforma_invoice') else 'Document fields and tables' }}">
       <a class="tab {{ 'is-active' if active_tab == 'fields' else '' }}" href="?document_id={{ selected.id }}&page={{ selected_page }}&tab=fields"{% if active_tab == 'fields' %} aria-current="page"{% endif %}>
         {{ icon('file-text', 14) }}<span>Fields</span><span class="tab-count">{{ scalar_fields | length }}</span>
       </a>
-      <a class="tab {{ 'is-active' if active_tab == 'items' else '' }}" href="?document_id={{ selected.id }}&page={{ selected_page }}&tab=items"{% if active_tab == 'items' %} aria-current="page"{% endif %}>
-        {{ icon('table', 14) }}<span>Line items</span><span class="tab-count">{{ line_item_table.rows | length }}</span>
+      {% for key, panel in table_panels.items() %}
+      <a class="tab {{ 'is-active' if active_tab == key else '' }}" href="?document_id={{ selected.id }}&page={{ selected_page }}&tab={{ key }}"{% if active_tab == key %} aria-current="page"{% endif %}>
+        {{ icon('table', 14) }}<span>{{ panel.label }}</span><span class="tab-count">{{ panel.rows | length }}</span>
       </a>
+      {% endfor %}
     </nav>
     {% endif %}
 
     {% set reviewed = labels | map(attribute='field_path') | list %}
-    <div class="card-body field-list" data-tab-panel="fields"{% if active_tab == 'items' %} hidden{% endif %}>
+    <div class="card-body field-list" data-tab-panel="fields"{% if active_tab != 'fields' %} hidden{% endif %}>
       {% for path, field in scalar_fields.items() %}
       {% set field_label = path | replace('.', ' ') | replace('[', ' ') | replace(']', '') | humanize %}
       <article class="field-card inline-field" tabindex="0" data-page="{{ field.provenance.page_index }}" data-box='{{ boxes.get(path) | tojson }}'>
@@ -139,37 +161,11 @@
       {% endif %}
     </div>
 
-    {% if line_item_table %}
-    <div class="card-body line-items-panel" data-tab-panel="items"{% if active_tab != 'items' %} hidden{% endif %}>
-      <section class="invoice-items" aria-label="Line items">
-        {% if line_item_table.incomplete %}<div class="notice notice-warning">{{ icon('circle-alert', 16) }}<p>Some line items may be missing. Compare the extracted rows with the source document.</p></div>{% endif %}
-        {% if line_item_table.rows %}
-        <div class="table-wrap line-items-scroll" tabindex="0" role="region" aria-label="Invoice line items">
-          <table class="line-items-table">
-            <caption class="sr-only">Extracted line items. Select a cell to view its evidence or edit its value.</caption>
-            <thead><tr><th scope="col">#</th>{% for column in line_item_table.columns %}<th scope="col">{{ column.label }}</th>{% endfor %}</tr></thead>
-            <tbody>
-            {% for row in line_item_table.rows %}
-              <tr><th scope="row" class="row-index">{{ row.index + 1 }}</th>
-              {% for column in line_item_table.columns %}
-              {% set cell = row.cells.get(column.key) %}
-              <td>
-                {% if cell %}
-                <div class="line-item-cell" tabindex="0" data-page="{{ cell.field.provenance.page_index }}" data-box='{{ boxes.get(cell.path) | tojson }}'>
-                {{ review_value(cell.path, cell.field, 'Line item ' ~ (row.index + 1) ~ ' ' ~ column.label, 'line-item-' ~ row.index ~ '-' ~ column.key, document, item, reviewed, read_only, compact=true) }}
-                </div>
-                {% else %}<span class="text-muted missing-cell">Not extracted</span>{% endif %}
-              </td>
-              {% endfor %}
-              </tr>
-            {% endfor %}
-            </tbody>
-          </table>
-        </div>
-        {% else %}<p class="text-muted">{% if processing %}Line items are still being extracted.{% else %}No line items were extracted.{% endif %}</p>{% endif %}
-      </section>
+    {% for key, panel in table_panels.items() %}
+    <div class="card-body line-items-panel" data-tab-panel="{{ key }}"{% if active_tab != key %} hidden{% endif %}>
+      {% include "partials/extraction_table.html" %}
     </div>
-    {% endif %}
+    {% endfor %}
   </section>
 
   <section class="card source-panel">
@@ -186,12 +182,15 @@
         <span class="page-counter" data-page-label>Page {{ selected_page + 1 }}</span>
         <a data-page-link="next" class="btn btn-secondary btn-sm" href="?document_id={{ selected.id }}&page={{ [selected.page_end, selected_page + 1] | min }}{% if line_item_table %}&tab={{ active_tab }}{% endif %}"><span>Next</span>{{ icon('chevron-right', 14) }}</a>
       </nav>
-      <figure class="page" id="page-{{ selected_page }}" data-source-page>
+      <figure class="source-preview" id="page-{{ selected_page }}" data-source-page>
         <div class="page-image">
           <img data-source-image alt="Source page {{ selected_page + 1 }}" src="/review/media/documents/{{ selected.id }}/pages/{{ selected_page }}">
           <div class="bbox" hidden></div>
         </div>
-        <p class="media-error" data-media-error hidden>{{ icon('image-off', 16) }} Source image unavailable or expired. Field values and review actions remain available.</p>
+        <div class="media-error" data-media-error hidden>
+          {{ icon('image-off', 16) }} <span>Source preview could not load.</span>
+          <button type="button" class="btn btn-secondary btn-sm" data-retry-source>Retry preview</button>
+        </div>
         <figcaption class="page-caption">Page {{ selected_page + 1 }} of {{ selected.page_end - selected.page_start + 1 }}</figcaption>
       </figure>
     </div>

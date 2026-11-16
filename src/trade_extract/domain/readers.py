@@ -127,6 +127,7 @@ class InventoryRow:
     page_index: int
     region_id: str
     bbox: BBox
+    columns: tuple[tuple[str, BBox], ...] = ()
 
 
 @dataclass(frozen=True)

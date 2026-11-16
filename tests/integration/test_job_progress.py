@@ -38,11 +38,21 @@ def test_progress_requires_session_and_queued_page_has_filename(api):
     body = response.json()
     assert body["processing"] is True
     assert body["stages"] == []
+    assert body["steps_completed"] == 0
+    assert [(step["id"], step["status"]) for step in body["steps"]] == [
+        ("prepare", "waiting"),
+        ("classify", "pending"),
+        ("extract", "pending"),
+        ("validate", "pending"),
+    ]
     assert body["files"][0]["name"] == "document-0.pdf"
     page = api.client.get(f"/review/jobs/{job_id}")
     assert page.status_code == 200
     assert "Preparing your documents" in page.text
     assert "data-job-progress" in page.text
+    assert "Extracting details" in page.text
+    assert 'max="4" value="0"' in page.text
+    assert page.text.count("data-progress-step=") == 4
     assert "data-autorefresh" not in page.text
 
 
@@ -58,6 +68,13 @@ def test_progress_is_visible_from_another_session_before_handler_returns(api, tm
             body = api.client.get(f"/review/jobs/{job_id}/progress").json()
             assert body["processing"] is True
             assert body["title"] == "Extracting fields"
+            assert body["steps_completed"] == 2
+            assert [step["status"] for step in body["steps"]] == [
+                "complete",
+                "complete",
+                "active",
+                "pending",
+            ]
             assert any(stage["status"] == "active" for stage in body["stages"])
             return super().text_reason(request)
 
@@ -121,6 +138,8 @@ def test_terminal_reviews_and_pending_finalization_are_distinct(api, tmp_path, m
     url = f"/review/jobs/{result['job_id']}/progress"
     body = api.client.get(url).json()
     assert body["state"] == "review"
+    assert body["steps_completed"] == 4
+    assert all(step["status"] == "complete" for step in body["steps"])
     assert body["fields"] > 0
     assert body["reviews"] > 0
     html = api.client.get(f"/review/jobs/{result['job_id']}").text

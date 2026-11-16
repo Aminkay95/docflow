@@ -131,7 +131,7 @@ DOCUMENT_SCHEMAS: dict[str, SchemaSpec] = {
         version="bl.dcsa-1.0",
         prompt="04-bill-of-lading.md",
         checks="advisory",
-        tables=frozenset({"containers"}),
+        tables=frozenset({"containers", "line_items"}),
         document_type="bill_of_lading",
     ),
     "delivery_order": SchemaSpec(

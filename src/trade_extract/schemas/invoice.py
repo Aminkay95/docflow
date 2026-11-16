@@ -34,6 +34,7 @@ INVOICE_FIELD_SET = FieldSet(
         *shipment_specs(),
         # Line items: one row per source row, every cell carrying its own provenance.
         field("line_items[].line_number"),
+        field("line_items[].item_code"),
         field("line_items[].description", required=True),
         field("line_items[].quantity", ValueType.DECIMAL, required=True),
         field("line_items[].unit_code", ValueType.ENUM),

@@ -23,6 +23,15 @@ CONTINUATION_CONFIDENCE: Final = 0.6
 #: Number of non-empty leading lines treated as the page title.
 _TITLE_LINE_COUNT: Final = 4
 
+# Document headings can follow a letterhead with several contact lines.
+_EXTENDED_HEADING_LINE_COUNT: Final = 12
+_DOCUMENT_HEADINGS: Final = {
+    "proforma_invoice": re.compile(r"pro[ -]?forma invoice", re.IGNORECASE),
+    "commercial_invoice": re.compile(r"(?:commercial|tax) invoice", re.IGNORECASE),
+    "bill_of_lading": re.compile(r"(?:bill of lading|sea waybill|waybill)", re.IGNORECASE),
+    "delivery_order": re.compile(r"delivery order", re.IGNORECASE),
+}
+
 #: A signal is ``(pattern, title_weight, body_weight)``. Each pattern contributes
 #: at most once per page: its title weight when it appears in the header, its body
 #: weight when it appears only lower down.
@@ -116,6 +125,10 @@ _LEXICON: Final[dict[str, tuple[_Signal, ...]]] = {
 
 _DIGITS = re.compile(r"\d+")
 _WHITESPACE = re.compile(r"\s+")
+_PACKING_LABEL = re.compile(r"\bpacking\s+(?:list|slip)\b", re.IGNORECASE)
+_CARRIER_LOAD = re.compile(r"\bshipper['’]s\s+load\b", re.IGNORECASE)
+_CONTAINER_MOVEMENT = re.compile(r"\b(?:FCL\s*/\s*FCL|CY\s*[-/]\s*CY)\b", re.IGNORECASE)
+_CONTAINER_ID = re.compile(r"\b[A-Z]{3}[UJZ]\s*\d{7}\b")
 
 
 @dataclass(frozen=True)
@@ -153,7 +166,29 @@ def score_page(text: str) -> dict[str, float]:
                 score += body_weight
         if score > 0:
             scores[document_type] = score
+    # Some carriers put the form labels in the background image. Require
+    # multiple shipping cues before treating the surviving cargo text as a B/L.
+    if (
+        _CARRIER_LOAD.search(text)
+        and _CONTAINER_MOVEMENT.search(text)
+        and _CONTAINER_ID.search(text.upper())
+    ):
+        scores["bill_of_lading"] = scores.get("bill_of_lading", 0.0) + 4.0
     return scores
+
+
+def _document_heading_types(text: str) -> set[str]:
+    lines = [" ".join(line.split()) for line in text.splitlines() if line.strip()]
+    leading_lines = lines[:_EXTENDED_HEADING_LINE_COUNT]
+    # OCR may emit adjacent words of a title as separate spans.
+    candidates = leading_lines + [
+        f"{first} {second}" for first, second in zip(leading_lines, leading_lines[1:], strict=False)
+    ]
+    return {
+        document_type
+        for document_type, pattern in _DOCUMENT_HEADINGS.items()
+        if any(pattern.fullmatch(candidate) for candidate in candidates)
+    }
 
 
 def classify_page(
@@ -162,7 +197,8 @@ def classify_page(
 ) -> PageClassification:
     """Classify one page from its embedded text only.
 
-    Confidence is the top type's share of the top-two score, so two equally
+    Standalone document headings can take priority over generic cues.
+    Otherwise confidence is the top type's share of the top-two score, so two equally
     scoring types halve it. A tie, a share below ``min_confidence``, a raw top
     score below ``min_confidence``, or a page with no text at all is ``unknown``.
     The caller decides whether an ``unknown`` page is a continuation of the
@@ -174,7 +210,18 @@ def classify_page(
         return PageClassification(UNKNOWN, 0.0)
 
     ranked = sorted(scores.items(), key=lambda item: (-item[1], item[0]))
+    document_headings = _document_heading_types(text)
+    if len(document_headings) > 1:
+        return PageClassification(UNKNOWN, 0.5, tuple(ranked))
+    if document_headings and not any(
+        score >= 4.0 for kind, score in ranked if kind not in _DOCUMENT_HEADINGS
+    ):
+        return PageClassification(next(iter(document_headings)), 1.0, tuple(ranked))
+
     top_type, top_score = ranked[0]
+    # Cargo weights and package details also appear on transport documents.
+    if top_type == "packing_list" and not _PACKING_LABEL.search(text):
+        return PageClassification(UNKNOWN, 0.0, tuple(ranked))
     second_score = ranked[1][1] if len(ranked) > 1 else 0.0
     total = top_score + second_score
     confidence = round(top_score / total, 4) if total > 0 else 0.0
@@ -188,6 +235,14 @@ def classify_page(
         reported = confidence if tied or not weak_evidence else 0.0
         return PageClassification(UNKNOWN, reported, tuple(ranked))
     return PageClassification(top_type, confidence, tuple(ranked))
+
+
+def has_clear_segment_heading(spec: SegmentSpec, page_texts: list[str]) -> bool:
+    """Require an explicit heading on every page and a strong local classification."""
+    return spec.confidence >= 0.95 and all(
+        _document_heading_types(text) == {spec.document_type}
+        for text in page_texts[spec.page_start : spec.page_end + 1]
+    )
 
 
 def segment_pages(

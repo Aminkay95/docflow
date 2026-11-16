@@ -103,6 +103,7 @@ REQUIRED_ROW_PATHS: dict[str, set[str]] = {
         "line_items[].unit_price",
         "line_items[].line_extension_amount",
     },
+    "bill_of_lading": {"line_items[].description"},
     "custom_entry": {"goods_lines[].description"},
 }
 
@@ -160,6 +161,7 @@ shipment.port_of_discharge
 shipment.country_of_origin
 shipment.marks_and_numbers
 line_items[].line_number
+line_items[].item_code
 line_items[].description
 line_items[].quantity
 line_items[].unit_code
@@ -242,6 +244,14 @@ containers[].volume_m3
 containers[].marks
 containers[].description
 containers[].hs_code
+line_items[].description
+line_items[].marks
+line_items[].package_count
+line_items[].package_type
+line_items[].gross_weight_kg
+line_items[].net_weight_kg
+line_items[].volume_m3
+line_items[].hs_code
 clauses[].text
 signature.place
 signature.date
@@ -262,6 +272,7 @@ agent.name
 consignee.name
 consignee.address.line1
 notify_party.name
+release.place_of_delivery
 release.terminal
 release.warehouse
 release.reference
@@ -272,6 +283,11 @@ containers[].type
 containers[].gross_weight_kg
 containers[].package_count
 containers[].package_type
+containers[].gross_weight
+containers[].net_weight
+containers[].net_weight_kg
+containers[].volume
+containers[].description
 cargo.description
 cargo.marks
 charges[].description

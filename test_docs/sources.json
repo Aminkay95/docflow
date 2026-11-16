@@ -1,0 +1,661 @@
+[
+  {
+    "path": "bill_of_lading/bill-of-lading-long-form-empty.pdf",
+    "category": "bill_of_lading",
+    "source_url": "https://www.lakesidefoods.com/wp-content/uploads/2018/02/Bill_of_Lading-Long_Form.pdf",
+    "sample_type": "Bill of Lading - Long Form",
+    "pages": 2,
+    "sha256": "2dca4c485ab8c7677a8e79b8d2d9848759d7333ffc8f564ddef2110695c930d8",
+    "fill_status": "empty"
+  },
+  {
+    "path": "bill_of_lading/bill-of-lading-ovrseas-filled.pdf",
+    "category": "bill_of_lading",
+    "source_url": "https://ovrseas.io/samples/bill-of-lading-sample.pdf",
+    "sample_type": "filled_sample",
+    "pages": 1,
+    "sha256": "90c25826f372d8ddc14d55dca2111268d18bb8f1386897d0136dc39e1b9b30ce",
+    "fill_status": "filled"
+  },
+  {
+    "path": "bill_of_lading/bill-of-lading-template-pdf-empty.pdf",
+    "category": "bill_of_lading",
+    "source_url": "https://www.gov.mb.ca/agriculture/food-and-ag-processing/starting-a-food-business/pubs/bill-of-lading-template.pdf",
+    "sample_type": "bill-of-lading-template.pdf",
+    "pages": 1,
+    "sha256": "74b1d8d10d056e185ec00e905959c9d51bbadb36bf54ba5657559c232bfcaee7",
+    "fill_status": "empty"
+  },
+  {
+    "path": "bill_of_lading/bill-of-lading-empty.pdf",
+    "category": "bill_of_lading",
+    "source_url": "https://www.bimco.org/media/bchchusv/sample-copy-polcoalbill.pdf",
+    "sample_type": "BILL OF LADING",
+    "pages": 2,
+    "sha256": "da3c4c7355577d8aea7e6c4e4a523d65d96bb2da9f37071153e1ee8f311db8d6",
+    "fill_status": "empty"
+  },
+  {
+    "path": "bill_of_lading/example-maersk-bill-of-lading-pdf-empty.pdf",
+    "category": "bill_of_lading",
+    "source_url": "https://africactn.com/staging/wp-content/uploads/2023/02/Example-Maersk-BIll-of-Lading.pdf",
+    "sample_type": "Example-Maersk-BIll-of-Lading.pdf",
+    "pages": 1,
+    "sha256": "563f03b6e35624da3ea3fef719f6ce2064439c999fec0355f1046f5480775a7f",
+    "fill_status": "empty"
+  },
+  {
+    "path": "bill_of_lading/house-bill-of-lading-empty.pdf",
+    "category": "bill_of_lading",
+    "source_url": "https://fibs-logistics.com/wp-content/uploads/RSL-House-BL-Sample.pdf",
+    "sample_type": "House Bill of Lading",
+    "pages": 2,
+    "sha256": "6af87146e83af1992fbabb4a208ad20cb264cfcc992a75b2cafa23834abcc9b2",
+    "fill_status": "empty"
+  },
+  {
+    "path": "bill_of_lading/ocean-bill-of-lading-adecc018-filled.pdf",
+    "category": "bill_of_lading",
+    "source_url": "https://fresatechnologies.com/wp-content/uploads/report-formats/hbl-draft-report-format-7.pdf",
+    "sample_type": "OCEAN BILL OF LADING",
+    "pages": 2,
+    "sha256": "adecc01889e34c0f0601eb1ac3ce4e4fe37c58c275b5b92bde123b4853e5f98b",
+    "fill_status": "filled"
+  },
+  {
+    "path": "bill_of_lading/ocean-bill-of-lading-empty.pdf",
+    "category": "bill_of_lading",
+    "source_url": "https://www.dhx.com/forms/mm_ocean_bol_w_f.pdf",
+    "sample_type": "Ocean Bill of Lading",
+    "pages": 2,
+    "sha256": "28d62d6c54cb5c8c7573b813a79d6954dc90bc600a847280ccf8eb9572d31290",
+    "fill_status": "empty"
+  },
+  {
+    "path": "bill_of_lading/sea-waybill-pdf-empty.pdf",
+    "category": "bill_of_lading",
+    "source_url": "https://arkasline.com.tr/en/wp-content/uploads/2024/07/Sea-Waybill.pdf",
+    "sample_type": "Sea-Waybill.pdf",
+    "pages": 2,
+    "sha256": "bdecaabc8b1b7b9e06037044f8be4f08ed62d3ae768f1d8fa2940ce801cc33d0",
+    "fill_status": "empty"
+  },
+  {
+    "path": "bill_of_lading/xpo-straight-bill-of-lading-empty.pdf",
+    "category": "bill_of_lading",
+    "source_url": "https://www.xpo.com/cdn/files/s1/Bill-of-Lading-Form_2024.pdf",
+    "sample_type": "XPO straight bill of lading",
+    "pages": 1,
+    "sha256": "bd8c5a9eef6f027f5bf5b016e58a070be65550b26b9dc933f0912b640d3dba39",
+    "fill_status": "empty"
+  },
+  {
+    "path": "commercial_invoice/cct-commercial-invoice-filled.pdf",
+    "category": "commercial_invoice",
+    "source_url": "https://cctworldwidelogistics.com/wp-content/uploads/2024/02/EXAMPLE-INV-BLANK.pdf",
+    "sample_type": "CCT commercial invoice",
+    "pages": 1,
+    "sha256": "70ad01e82e8e1020257de3a0be70a84223e21125e99fdc5368c67c68928c0716",
+    "fill_status": "filled"
+  },
+  {
+    "path": "commercial_invoice/commercial-invoice-and-packing-list-empty.pdf",
+    "category": "commercial_invoice",
+    "source_url": "https://www.cevalogistics.com/documents/2023-10/CIPL%20-%20TEMPLATE%20GBP.pdf",
+    "sample_type": "Commercial Invoice and Packing List",
+    "pages": 1,
+    "sha256": "9c53f0665c641fb01663f9b78741ffede2e474074c790646c20e3f3a72a55a49",
+    "fill_status": "empty"
+  },
+  {
+    "path": "commercial_invoice/commercial-invoice-ovrseas-filled.pdf",
+    "category": "commercial_invoice",
+    "source_url": "https://ovrseas.io/samples/commercial-invoice-sample.pdf",
+    "sample_type": "filled_sample",
+    "pages": 1,
+    "sha256": "8914d4bf9cac0d5cbb8b153234a020bd2edc0ebe54f8c4c6058f12d47808a892",
+    "fill_status": "filled"
+  },
+  {
+    "path": "commercial_invoice/commercial-invoice-template-les-jumelles-returnista-empty.pdf",
+    "category": "commercial_invoice",
+    "source_url": "https://les-jumelles.returnista.com/commercial-invoice.pdf",
+    "sample_type": "Commercial Invoice Template - Les Jumelles - Returnista",
+    "pages": 1,
+    "sha256": "112ff31b28997e8118db124fcd17a076ba1606e83197d2aff45b56b973c0c70c",
+    "fill_status": "empty"
+  },
+  {
+    "path": "commercial_invoice/commercial-invoice-template-empty.pdf",
+    "category": "commercial_invoice",
+    "source_url": "https://www.smartsheet.com/sites/default/files/2020-03/IC-Commercial-Invoice-Template-10768_PDF.pdf?srsltid=AYCX9vLsJRieK5E3cLIk2oNRuB0h4wbOYNHSsWR7frETbbXlMCDPVoIO",
+    "sample_type": "COMMERCIAL INVOICE TEMPLATE",
+    "pages": 2,
+    "sha256": "99c3760c8fac98232448f78c89e0671c28188355ae7e3d6278c1277b4c1dc26f",
+    "fill_status": "empty"
+  },
+  {
+    "path": "commercial_invoice/commercial-invoice-empty.pdf",
+    "category": "commercial_invoice",
+    "source_url": "https://www.tnt.com/dam/tnt_express_media/global_media_library/images/customs-clearance/commercial-invoice-template-jan-18.pdf",
+    "sample_type": "Commercial Invoice",
+    "pages": 1,
+    "sha256": "69a1c32aa149c15d5645f1fe319e7e385c42a8dcef1f8ff9881ab4580e94f6ca",
+    "fill_status": "empty"
+  },
+  {
+    "path": "commercial_invoice/export-commercial-invoice-empty.pdf",
+    "category": "commercial_invoice",
+    "source_url": "https://www.ups.com/assets/resources/webcontent/en_GB/invoice.pdf",
+    "sample_type": "EXPORT COMMERCIAL INVOICE",
+    "pages": 1,
+    "sha256": "9996d73b641660df4ee56bbc116db3bbcbf24c405a4a2311bb4b1fc9346eb6e5",
+    "fill_status": "empty"
+  },
+  {
+    "path": "commercial_invoice/flowdocs-commercial-invoice-empty.pdf",
+    "category": "commercial_invoice",
+    "source_url": "https://www.flowdocsapp.com/templates/ups-commercial-invoice.pdf",
+    "sample_type": "FlowDocs commercial invoice",
+    "pages": 4,
+    "sha256": "93ed8138538c58e50dd0e9cca254793fa7fd2da6def77be7f456428fd04f15a3",
+    "fill_status": "empty"
+  },
+  {
+    "path": "commercial_invoice/holistic-health-commercial-invoice-sample-filled.pdf",
+    "category": "commercial_invoice",
+    "source_url": "https://www.holisticheal.com/media/invoices/buccal_sample_ddi_comercial_invoice.pdf",
+    "sample_type": "Holistic Health commercial invoice sample",
+    "pages": 1,
+    "sha256": "da4bc4ad14f0c142f1a1f8275bc989b0450dad533ef611fa928876fdb452e232",
+    "fill_status": "filled"
+  },
+  {
+    "path": "commercial_invoice/tennant-commercial-invoice-sample-empty.pdf",
+    "category": "commercial_invoice",
+    "source_url": "https://www.tennantco.com/content/dam/resources/web-content/supplier-documents/sample-commercial-invoice.pdf",
+    "sample_type": "Tennant commercial invoice sample",
+    "pages": 1,
+    "sha256": "f42e73186b92e4540b09ea767a05e568446e77e8951ee07d04791ca258a77fcb",
+    "fill_status": "empty"
+  },
+  {
+    "path": "custom_entry/b650-import-declaration-n10-empty.pdf",
+    "category": "custom_entry",
+    "source_url": "https://www.abf.gov.au/form-listing/forms/b650.pdf",
+    "sample_type": "B650 - Import Declaration (N10)",
+    "pages": 3,
+    "sha256": "48c22eb02eb21dee2dff0885e8fd48a2ef2fc5c4b83babdd6f94238e6f517919",
+    "fill_status": "empty"
+  },
+  {
+    "path": "custom_entry/cbp-form-7501-pdf-empty.pdf",
+    "category": "custom_entry",
+    "source_url": "https://www.cbp.gov/sites/default/files/assets/documents/2018-Feb/CBP%20Form%207501.pdf",
+    "sample_type": "CBP Form 7501.pdf",
+    "pages": 5,
+    "sha256": "6bfeb4af5b9978982a2d85e1f14f040c9d768f03062d58e1af023134128ea2b1",
+    "fill_status": "empty"
+  },
+  {
+    "path": "custom_entry/custom-entry-kra-c17b-empty.pdf",
+    "category": "custom_entry",
+    "source_url": "https://www.kra.go.ke/images/publications/c17b-single-entry-form-simba.pdf",
+    "sample_type": "blank_official_form",
+    "pages": 1,
+    "sha256": "da15102c07823178baeeb95f18c249466aa4970b0e80da18305a69b28bc86dfa",
+    "fill_status": "empty"
+  },
+  {
+    "path": "custom_entry/customs-declaration-research-specimen-empty.pdf",
+    "category": "custom_entry",
+    "source_url": "https://raw.githubusercontent.com/Seondong/Customs-Declaration-Datasets/en/resources/import_declaration_form.pdf",
+    "sample_type": "Customs declaration research specimen",
+    "pages": 1,
+    "sha256": "6fe2f512feb84a07e3c66f2d8e91f81d2fc2252663d75d1812b3fbeecd8ca906",
+    "fill_status": "empty"
+  },
+  {
+    "path": "custom_entry/estonian-customs-declaration-of-diplomatic-merchandise-empty.pdf",
+    "category": "custom_entry",
+    "source_url": "https://www.emta.ee/sites/default/files/documents/2021-08/mta_diplomaatilise_kauba_deklaratsioon2012.pdf",
+    "sample_type": "Estonian customs declaration of diplomatic merchandise",
+    "pages": 1,
+    "sha256": "bd2e0306914312487e04e1069f8d0bf0ae819d5c08c8ec5fb3db8f3c0b3d34b4",
+    "fill_status": "empty"
+  },
+  {
+    "path": "custom_entry/estonian-tax-and-customs-board-import-declaration-empty.pdf",
+    "category": "custom_entry",
+    "source_url": "https://www.emta.ee/sites/default/files/documents/2023-09/impordi_tollideklaratsioon.pdf",
+    "sample_type": "Estonian Tax and Customs Board import declaration",
+    "pages": 6,
+    "sha256": "fd7f434f0488dde543862c6ae547cd8f2f0dbff9b9b6960fa6c65757c6c0474c",
+    "fill_status": "empty"
+  },
+  {
+    "path": "custom_entry/japan-customs-example-import-declaration-filled.pdf",
+    "category": "custom_entry",
+    "source_url": "https://www.customs.go.jp/english/c-answer_e/pdf/FAX1110e.pdf",
+    "sample_type": "Japan Customs example import declaration",
+    "pages": 1,
+    "sha256": "940fd7fbedcec66d411656144dd49f0b4ce9eb69246c365344b5ac58f922727b",
+    "source_pages": [
+      1
+    ],
+    "fill_status": "filled"
+  },
+  {
+    "path": "custom_entry/namra-sad-500-customs-declaration-empty.pdf",
+    "category": "custom_entry",
+    "source_url": "https://www.namra.org.na/documents/cms/uploaded/sad-500--customs-declaration-form-cefr066-80f3f16b8f.pdf",
+    "sample_type": "NamRA SAD 500 customs declaration",
+    "pages": 1,
+    "sha256": "9dec15bb46c19fa3addfc0ac6aa5a911837a46441f829a854b42ad50db1da724",
+    "fill_status": "empty"
+  },
+  {
+    "path": "custom_entry/sierra-leone-single-customs-declaration-for-import-empty.pdf",
+    "category": "custom_entry",
+    "source_url": "https://mail.nra.gov.sl/sites/default/files/Single%20Customs%20Declaration%20Form%20for%20Import%20%28Front%20and%20Back%20Views%29.pdf",
+    "sample_type": "Sierra Leone single customs declaration for import",
+    "pages": 2,
+    "sha256": "de13030a02c946a153bed5f33f8649e5c66ffd9330c5169101797ece71ec7497",
+    "fill_status": "empty"
+  },
+  {
+    "path": "custom_entry/taipei-customs-import-declaration-empty.pdf",
+    "category": "custom_entry",
+    "source_url": "https://web.customs.gov.tw/etaipei/download/e40ea7bf8640435c83c15598f5ea2379",
+    "sample_type": "Taipei Customs import declaration",
+    "pages": 2,
+    "sha256": "356a30491df62f18ae879208b9ec117848055930540e89be49e96dee2a5f8bf9",
+    "fill_status": "empty"
+  },
+  {
+    "path": "delivery_order/container-delivery-order-template-empty.pdf",
+    "category": "delivery_order",
+    "source_url": "https://docs-business.com/wp-content/uploads/container_delivery_order_template.pdf",
+    "sample_type": "Container delivery order template",
+    "pages": 3,
+    "sha256": "475c400943f21445b0b749cd16e1a526e51daa45e814d79f11bff7987c453965",
+    "fill_status": "empty"
+  },
+  {
+    "path": "delivery_order/d-o-fcl-vietnam-rpm-ref-411-filled.pdf",
+    "category": "delivery_order",
+    "source_url": "https://fresatechnologies.com/wp-content/fresa-std-files/fresagold/sample_reports/d.o_fcl_vietnam_rpm_ref_411.pdf",
+    "sample_type": "d.o_fcl_vietnam_rpm_ref_411",
+    "pages": 1,
+    "sha256": "15b5b29c345f51555bc546ba363d42e5b5237fc680a43e38a9dcc1d330534334",
+    "fill_status": "filled"
+  },
+  {
+    "path": "delivery_order/d-o-lcl-vietnam-without-stamp-rpm-ref-427-filled.pdf",
+    "category": "delivery_order",
+    "source_url": "https://fresatechnologies.com/wp-content/fresa-std-files/fresagold/sample_reports/d.o_lcl_vietnam_without_stamp_rpm_ref_427.pdf",
+    "sample_type": "d.o_lcl_vietnam_without_stamp_rpm_ref_427",
+    "pages": 1,
+    "sha256": "c57f196284658cc4cee751ba9cee8e01c7bdb2f3a80f66eda052f062edec8225",
+    "fill_status": "filled"
+  },
+  {
+    "path": "delivery_order/delivery-order-fresa-sea-filled.pdf",
+    "category": "delivery_order",
+    "source_url": "https://fresatechnologies.com/wp-content/fresa-std-files/fresagold/sample_reports/fg_delivery_order_sea_format8_rpm_ref_940.pdf",
+    "sample_type": "vendor_published_sample",
+    "pages": 1,
+    "sha256": "83e74d2c682fecde108f4e5a5cb34e7dc8616e54290d283e6deda69bc7652916",
+    "fill_status": "filled"
+  },
+  {
+    "path": "delivery_order/fg-delivery-order-abudhabi-rpm-ref-808-filled.pdf",
+    "category": "delivery_order",
+    "source_url": "https://fresatechnologies.com/wp-content/fresa-std-files/fresagold/sample_reports/fg_delivery_order_abudhabi_rpm_ref_808.pdf",
+    "sample_type": "fg_delivery_order_abudhabi_rpm_ref_808",
+    "pages": 1,
+    "sha256": "36a093546c48202b5e1937fff6305dad3e2ce1aaedba4a973c851ec6074d3a41",
+    "fill_status": "filled"
+  },
+  {
+    "path": "delivery_order/fg-delivery-order-sea-format1-rpm-ref-538-filled.pdf",
+    "category": "delivery_order",
+    "source_url": "https://fresatechnologies.com/wp-content/fresa-std-files/fresagold/sample_reports/fg_delivery_order_sea_format1_rpm_ref_538.pdf",
+    "sample_type": "fg_delivery_order_sea_format1_rpm_ref_538",
+    "pages": 1,
+    "sha256": "837319da9f863268ba12892aef778ee4f3c7acd49323b2a0fd0d374311c14b0c",
+    "fill_status": "filled"
+  },
+  {
+    "path": "delivery_order/fg-delivery-order-sea-format10-rpm-ref-1395-filled.pdf",
+    "category": "delivery_order",
+    "source_url": "https://fresatechnologies.com/wp-content/fresa-std-files/fresagold/sample_reports/fg_delivery_order_sea_format10_rpm_ref_1395.pdf",
+    "sample_type": "fg_delivery_order_sea_format10_rpm_ref_1395",
+    "pages": 1,
+    "sha256": "cbd7cd0a31baf782bf9cf1ea84874e1afd09810883b1fbf4b33f0858b32aef0e",
+    "fill_status": "filled"
+  },
+  {
+    "path": "delivery_order/fg-delivery-order-sea-format3-rpm-ref-560-filled.pdf",
+    "category": "delivery_order",
+    "source_url": "https://fresatechnologies.com/wp-content/fresa-std-files/fresagold/sample_reports/fg_delivery_order_sea_format3_rpm_ref_560.pdf",
+    "sample_type": "fg_delivery_order_sea_format3_rpm_ref_560",
+    "pages": 1,
+    "sha256": "07eab2fa28429c3d0420b1fdf80d7606afc2fdbbfccf6c0d9d9aede2b827f2cd",
+    "fill_status": "filled"
+  },
+  {
+    "path": "delivery_order/fg-delivery-order-sea-format5-rpm-ref-628-filled.pdf",
+    "category": "delivery_order",
+    "source_url": "https://fresatechnologies.com/wp-content/fresa-std-files/fresagold/sample_reports/fg_delivery_order_sea_format5_rpm_ref_628.pdf",
+    "sample_type": "fg_delivery_order_sea_format5_rpm_ref_628",
+    "pages": 1,
+    "sha256": "54b018bb513595b338c45b98696b682486321ce25f24df0fc4d321d1767a5a2b",
+    "fill_status": "filled"
+  },
+  {
+    "path": "delivery_order/fresa-sea-electronic-delivery-order-sample-filled.pdf",
+    "category": "delivery_order",
+    "source_url": "https://fresatechnologies.com/wp-content/fresa-std-files/fresagold/sample_reports/fg_e_delivery_order_sea_format1_rpm_ref_1147.pdf",
+    "sample_type": "Fresa sea electronic delivery order sample",
+    "pages": 1,
+    "sha256": "40668979b283f0236d44bf0d89e8d57f8940464a514f6dc3b029f0c7f65cfb39",
+    "fill_status": "filled"
+  },
+  {
+    "path": "port_pass/bukit-kayu-hitam-malay-port-pass-form-empty.pdf",
+    "category": "port_pass",
+    "source_url": "https://bkhicd.com/wp-content/uploads/2024/11/BKHICD-BORANG-PAS-PELABUHAN_BM.pdf",
+    "sample_type": "Bukit Kayu Hitam Malay port pass form",
+    "pages": 2,
+    "sha256": "cff4d48c64cf8913c11d5cd3e3a2952888d494000f8b9a1ba4c4fd049a5a4190",
+    "fixture_role": "blank port pass application form",
+    "fill_status": "empty"
+  },
+  {
+    "path": "port_pass/bukit-kayu-hitam-port-pass-form-empty.pdf",
+    "category": "port_pass",
+    "source_url": "https://bkhicd.com/wp-content/uploads/2024/11/BKHICD-BORANG-PAS-PELABUHAN_ENGLISH.pdf",
+    "sample_type": "Bukit Kayu Hitam port pass form",
+    "pages": 2,
+    "sha256": "f92fd1d800618ebb8baa2bd23c91102e32962db510ee078025bb717d5ef01db8",
+    "fixture_role": "blank port pass application form",
+    "fill_status": "empty"
+  },
+  {
+    "path": "port_pass/cochin-wharf-vehicle-entry-pass-specimen-filled.pdf",
+    "category": "port_pass",
+    "source_url": "https://cochinport.gov.in/sites/default/files/inline-files/QR%20Code%20based%20Vehicle%20Pass-User%20Manual.pdf",
+    "sample_type": "Cochin Wharf vehicle entry pass specimen",
+    "pages": 1,
+    "sha256": "72df2cd3dc0598a1a1ecb920f15b032a15a0898c7cce3ec55985cf9c1f15efb3",
+    "source_pages": [
+      6
+    ],
+    "fill_status": "filled"
+  },
+  {
+    "path": "port_pass/internal-tracking-no-date-port-of-galeota-isthmus-road-empty.pdf",
+    "category": "port_pass",
+    "source_url": "https://nationalenergy.tt/portals/0/forms/Port_of_Galeota--Port%20Access.pdf",
+    "sample_type": "Internal Tracking No. Date: Port of Galeota Isthmus Road ...",
+    "pages": 2,
+    "sha256": "1cbfbd62009767c8d7e1147491b0005a1a1735fb7629d196cbe52493b4363838",
+    "fixture_role": "blank port pass application form",
+    "fill_status": "empty"
+  },
+  {
+    "path": "port_pass/kenya-public-port-pass-example-filled.jpg",
+    "category": "port_pass",
+    "source_url": "https://infotradekenya.go.ke/media/Valid%20Port%20Pass-001.jpg",
+    "sample_type": "Kenya public port pass example",
+    "pages": 1,
+    "sha256": "59935df54a79f2d10258f195df44856c485340f53d99872916e5bd9f02c9e084",
+    "fill_status": "filled"
+  },
+  {
+    "path": "port_pass/kpa-gate-pass-empty.jpg",
+    "category": "port_pass",
+    "source_url": "https://infotradekenya.go.ke/media/Gate%20pass.jpg",
+    "sample_type": "published KPA gate pass example",
+    "pages": 1,
+    "sha256": "32060d2734bb7dd817c2e577e58bec4b2858b660cf86ed1b2a3028ad3addf6cf",
+    "fill_status": "empty"
+  },
+  {
+    "path": "port_pass/philippine-ports-authority-annual-port-user-pass-application-empty.pdf",
+    "category": "port_pass",
+    "source_url": "https://ppa.com.ph/sites/default/files/issuances_docs/PPA-AO-007-2021.pdf",
+    "sample_type": "Philippine Ports Authority annual port user pass application",
+    "pages": 1,
+    "sha256": "b75784b1edbf64d62df15e79bd83218a2c8abcb8440c184831eb64eb81f9fbb8",
+    "source_pages": [
+      6
+    ],
+    "fixture_role": "blank port pass application form",
+    "fill_status": "empty"
+  },
+  {
+    "path": "port_pass/png-ports-vehicle-pass-application-empty.pdf",
+    "category": "port_pass",
+    "source_url": "https://www.pngports.com.pg/media/attachments/2024/06/06/application-form-for-vehicle-pass.pdf",
+    "sample_type": "PNG Ports vehicle pass application",
+    "pages": 1,
+    "sha256": "c6116075660697645c306809b39bcd4a7056bcd90fdeb885a627f7c7addaa0d0",
+    "fixture_role": "blank port pass application form",
+    "fill_status": "empty"
+  },
+  {
+    "path": "port_pass/port-movement-access-card-application-form-empty.pdf",
+    "category": "port_pass",
+    "source_url": "https://portal.kpa.co.ke/web-uploads/documents/473f4e5e-11b2-4b5b-8839-2a6b7cd21929.pdf",
+    "sample_type": "Port Movement/Access Card Application Form",
+    "pages": 2,
+    "sha256": "d101d10b1094aed20143bb0121e4a0babd5d135ea877bc56b680d424008f61bd",
+    "fixture_role": "blank port pass application form",
+    "fill_status": "empty"
+  },
+  {
+    "path": "port_pass/tlp-terminal-port-pass-application-empty.pdf",
+    "category": "port_pass",
+    "source_url": "https://tlpterminal.com.my/wp-content/uploads/2024/07/Port-Pass-Application-FormApril-2024.pdf",
+    "sample_type": "TLP Terminal port pass application",
+    "pages": 1,
+    "sha256": "854179ba6e09c5ba458b3a5dbe5477ea81695b2cc734476d3108c789adf672d0",
+    "fixture_role": "blank port pass application form",
+    "fill_status": "empty"
+  },
+  {
+    "path": "proforma_invoice/pro-forma-invoice-for-customs-purposes-empty.pdf",
+    "category": "proforma_invoice",
+    "source_url": "https://www.deadline.co.uk/wp-content/uploads/2024/05/ProForma-or-Comercial-Invoice-Template.pdf",
+    "sample_type": "PRO FORMA INVOICE FOR CUSTOMS PURPOSES",
+    "pages": 1,
+    "sha256": "fb9d527c6eeaf2d35ad2735d7d1e33d99b9f3c412bfe4738ecd1f2964f951a68",
+    "fill_status": "empty"
+  },
+  {
+    "path": "proforma_invoice/pro-forma-invoice-for-customs-use-only-filled.pdf",
+    "category": "proforma_invoice",
+    "source_url": "https://www.labcorp.com/content/dam/genetics/forms/Invitae%20-%20FM135_Proforma_Invoice_Inbound_DNA_Form.pdf",
+    "sample_type": "Pro Forma Invoice: For Customs Use Only",
+    "pages": 1,
+    "sha256": "7df92610ef6963dac3111fd0ec70eb0c8e675de347891a5f811c33e56603ccd9",
+    "fill_status": "filled"
+  },
+  {
+    "path": "proforma_invoice/proforma-invoice-and-declaration-of-contents-filled.pdf",
+    "category": "proforma_invoice",
+    "source_url": "https://www.fuchs.com/fileadmin/se/Downloads/English/Lab_Advisor/Proforma_Invoice_and_Declaration_of_Contents_-_Used_Oil_Sample.pdf",
+    "sample_type": "Proforma invoice and Declaration of Contents",
+    "pages": 2,
+    "sha256": "2f6bc99eea59f749e664cd2ffa5976fde40ee1dbae3bc9400ba642c2a90ddf4b",
+    "fill_status": "filled"
+  },
+  {
+    "path": "proforma_invoice/proforma-invoice-c3242a14-empty.pdf",
+    "category": "proforma_invoice",
+    "source_url": "https://wmda.info/storage/2020/08/WMDA-FORM-T50_20181207.pdf",
+    "sample_type": "PROFORMA INVOICE",
+    "pages": 1,
+    "sha256": "c3242a146c53aec70a3ee1f66082b6e9f1293723ea1d59bac86c94046c20d726",
+    "fill_status": "empty"
+  },
+  {
+    "path": "proforma_invoice/proforma-invoice-format-empty.pdf",
+    "category": "proforma_invoice",
+    "source_url": "https://tzorc.ir/UploadFiles/Recall/Forms/ProformaInvoiceFormat.pdf",
+    "sample_type": "Proforma invoice format",
+    "pages": 1,
+    "sha256": "434b900a5eda3d84d9a577a604bb2f68b07dbe09b332d3d3c90559283b0a138a",
+    "fill_status": "empty"
+  },
+  {
+    "path": "proforma_invoice/proforma-invoice-shipzy-filled.pdf",
+    "category": "proforma_invoice",
+    "source_url": "https://goshipzy.com/pdf/proforma_invoice.pdf",
+    "sample_type": "published_sample",
+    "pages": 1,
+    "sha256": "53c7dbd52fa1c88a84a2897092d142638ae4542b7c1bc7ecb28337ee3cfee18f",
+    "fill_status": "filled"
+  },
+  {
+    "path": "proforma_invoice/proforma-invoice-empty.pdf",
+    "category": "proforma_invoice",
+    "source_url": "https://www.tnt.it/download/proforma_invoice.pdf",
+    "sample_type": "PROFORMA INVOICE",
+    "pages": 1,
+    "sha256": "83bb14c6fd68c8d76bd146fb992528643a69e280a305c1d79da265b2694d27df",
+    "fill_status": "empty"
+  },
+  {
+    "path": "proforma_invoice/sample-invoice-filled.pdf",
+    "category": "proforma_invoice",
+    "source_url": "https://www.aoaaccess.com/assets/pdf/proforma_sample_invoice_2017-4.pdf",
+    "sample_type": "sample invoice",
+    "pages": 1,
+    "sha256": "9c04e6b7678c75011aaac02d09464bb9c18ceae32b3a5ece69d6df3637da8a1c",
+    "fill_status": "filled"
+  },
+  {
+    "path": "proforma_invoice/us-customs-pro-forma-invoice-empty.pdf",
+    "category": "proforma_invoice",
+    "source_url": "https://www.willsonintl.com/wp-content/uploads/2015/03/U.S.-Customs-Pro-Forma-Invoice.pdf",
+    "sample_type": "US CUSTOMS PRO FORMA INVOICE",
+    "pages": 2,
+    "sha256": "dd26f567b998fdea12888d6a3d44ccc8218a1839a97014b5960338e30ffb81ca",
+    "fill_status": "empty"
+  },
+  {
+    "path": "proforma_invoice/us-customs-proforma-invoice-empty.pdf",
+    "category": "proforma_invoice",
+    "source_url": "https://www.cn.ca/-/media/files/suppliers/routing-instructions/cn-us-proforma.pdf",
+    "sample_type": "US Customs Proforma Invoice",
+    "pages": 1,
+    "sha256": "323a004003ff884c16bddc1f476c2e854049e974385167a61197d3c29672ccb0",
+    "fill_status": "empty"
+  },
+  {
+    "path": "verification_memo/cargo-loss-and-damage-claim-form-empty.pdf",
+    "category": "verification_memo",
+    "source_url": "https://static1.squarespace.com/static/5ed9144f9c4a192a173f76bf/t/5ee8d79e3ccb3b3ea783b718/1592317854880/CLAIM%2BFORM.pdf",
+    "sample_type": "Cargo loss and damage claim form",
+    "pages": 1,
+    "sha256": "1f3820325d301dc1ffc54e30123363074099d37ff8c9538c557cd9c5ed2bd941",
+    "fixture_role": "inspection, damage report, or claim-form proxy for an internal CFS verification memo",
+    "fill_status": "empty"
+  },
+  {
+    "path": "verification_memo/cbp-seven-point-container-inspection-checklist-empty.pdf",
+    "category": "verification_memo",
+    "source_url": "https://www.cbp.gov/sites/default/files/documents/7_pcic.pdf",
+    "sample_type": "CBP seven point container inspection checklist",
+    "pages": 1,
+    "sha256": "77d70a4b7bcfd7e1d3e1a35b14585c949dd26e66ed8e5ca26e6e48b6ad3c886c",
+    "fixture_role": "inspection, damage report, or claim-form proxy for an internal CFS verification memo",
+    "fill_status": "empty"
+  },
+  {
+    "path": "verification_memo/cbp-seventeen-point-trailer-inspection-checklist-empty.pdf",
+    "category": "verification_memo",
+    "source_url": "https://www.cbp.gov/sites/default/files/documents/17_pic.pdf",
+    "sample_type": "CBP seventeen point trailer inspection checklist",
+    "pages": 1,
+    "sha256": "a37ab946d92538b4f0312dc294389cbd7499d38264ef3bd66dcb1972e687f709",
+    "fixture_role": "inspection, damage report, or claim-form proxy for an internal CFS verification memo",
+    "fill_status": "empty"
+  },
+  {
+    "path": "verification_memo/cbsa-certificate-of-damaged-goods-empty.pdf",
+    "category": "verification_memo",
+    "source_url": "https://www.cbsa-asfc.gc.ca/publications/forms-formulaires/k11.pdf",
+    "sample_type": "CBSA certificate of damaged goods",
+    "pages": 1,
+    "sha256": "80d8b97c860e27aeca5e208f2a7898528c87d6aef82e8bef1c9f7d4740111a90",
+    "fixture_role": "inspection, damage report, or claim-form proxy for an internal CFS verification memo",
+    "fill_status": "empty"
+  },
+  {
+    "path": "verification_memo/coyote-inland-cargo-loss-and-damage-claim-form-empty.pdf",
+    "category": "verification_memo",
+    "source_url": "https://uploads-ssl.webflow.com/5ff34ccfc5d071867781da12/5fffe486399ba35aba8350aa_%5BInland%20Transport%5D%20Loss%20%26%20Damage%20Claim%20Form.pdf",
+    "sample_type": "Coyote inland cargo loss and damage claim form",
+    "pages": 3,
+    "sha256": "ec006a405d2bbc329142432217fb87da7f3c9fa19abfa75e49194730c54a76a9",
+    "fixture_role": "inspection, damage report, or claim-form proxy for an internal CFS verification memo",
+    "fill_status": "empty"
+  },
+  {
+    "path": "verification_memo/fastway-freight-damage-inspection-report-empty.pdf",
+    "category": "verification_memo",
+    "source_url": "https://fastwayfreight.com/wp-content/uploads/2025/06/inspectionReport-1.pdf",
+    "sample_type": "Fastway freight damage inspection report",
+    "pages": 1,
+    "sha256": "438098aca99c445f023a082fb766817091ba6d518f47d6c0843f73dac792ceda",
+    "fixture_role": "inspection, damage report, or claim-form proxy for an internal CFS verification memo",
+    "fill_status": "empty"
+  },
+  {
+    "path": "verification_memo/gbh-inbound-equipment-inspection-form-empty.pdf",
+    "category": "verification_memo",
+    "source_url": "https://www.gbhdepot.com/onlinedocs/GBH_Inbound_Equipment_Inspection_Form.pdf",
+    "sample_type": "GBH inbound equipment inspection form",
+    "pages": 1,
+    "sha256": "a1926be90274622ae1769c67275012667de402e17c1e260cf0d9d9006efee7e9",
+    "source_pages": [
+      1
+    ],
+    "fixture_role": "inspection, damage report, or claim-form proxy for an internal CFS verification memo",
+    "fill_status": "empty"
+  },
+  {
+    "path": "verification_memo/kebs-cfs-inspection-checklist-empty.pdf",
+    "category": "verification_memo",
+    "source_url": "https://infotradekenya.go.ke/media/KEBS%20Inspection%20Report.pdf",
+    "sample_type": "blank CFS inspection checklist, a verification memo proxy",
+    "pages": 4,
+    "sha256": "1841381264534c4d4c7efdd829f2eebc1a3ff8c9530b9f80eb1d4888562d2298",
+    "fixture_role": "inspection, damage report, or claim-form proxy for an internal CFS verification memo",
+    "fill_status": "empty"
+  },
+  {
+    "path": "verification_memo/south-bay-freight-shortage-and-damage-inspection-report-empty.pdf",
+    "category": "verification_memo",
+    "source_url": "https://ship.unisco.com/dl/Inspection%20Report%20of%20Short%20or%20Damage.pdf",
+    "sample_type": "South Bay Freight shortage and damage inspection report",
+    "pages": 1,
+    "sha256": "03d01bc70e15b839019b5b70c0e938d35e2e30f555c4b645a64e16a67f7523db",
+    "fixture_role": "inspection, damage report, or claim-form proxy for an internal CFS verification memo",
+    "fill_status": "empty"
+  },
+  {
+    "path": "verification_memo/transx-cargo-loss-and-damage-claim-form-empty.pdf",
+    "category": "verification_memo",
+    "source_url": "https://transx.com/wp-content/uploads/2021/07/Standard_Claim_Form_Filllable.pdf",
+    "sample_type": "TransX cargo loss and damage claim form",
+    "pages": 2,
+    "sha256": "91508d8c8266f0ddb7b456731266d2d5e397e56142b4c9e154c7b00865a0362e",
+    "fixture_role": "inspection, damage report, or claim-form proxy for an internal CFS verification memo",
+    "fill_status": "empty"
+  }
+]

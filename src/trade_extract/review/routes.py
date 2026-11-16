@@ -13,7 +13,7 @@ from fastapi import APIRouter, Depends, Form, HTTPException, Request, Response
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel, ConfigDict, Field
-from sqlalchemy import func, or_, select, update
+from sqlalchemy import Select, func, or_, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 from starlette.concurrency import run_in_threadpool
@@ -35,7 +35,7 @@ from trade_extract.domain import errors
 from trade_extract.domain.clock import Clock
 from trade_extract.domain.ids import new_id
 from trade_extract.review.auth import password_hash, principal, signer, verify_password
-from trade_extract.review.line_items import invoice_line_items
+from trade_extract.review.line_items import document_line_items
 from trade_extract.review.mail import send_password_reset_email
 from trade_extract.review.progress import project as job_progress
 from trade_extract.services import ingest
@@ -56,7 +56,14 @@ RESET_REQUEST_LIMIT = 3
 RESET_REQUEST_WINDOW_SECONDS = 900
 
 JOB_STATUSES = ("queued", "processing", "review_required", "completed", "failed")
-JOBS_PER_PAGE = 25
+REVIEW_PAGE_SIZE = 25
+
+
+def paginate(statement: Select, page: int, total: int) -> tuple[Select, dict[str, int]]:
+    pages = max(1, (total + REVIEW_PAGE_SIZE - 1) // REVIEW_PAGE_SIZE)
+    page = min(max(1, page), pages)
+    statement = statement.offset((page - 1) * REVIEW_PAGE_SIZE).limit(REVIEW_PAGE_SIZE)
+    return statement, {"page": page, "pages": pages, "total": total}
 
 
 def _badge(value: str | None) -> str:
@@ -108,16 +115,13 @@ def counts_for(session: Session) -> dict[str, int]:
     )
 
 
-def resolutions_for(session: Session, limit: int) -> list[Any]:
-    return list(
-        session.execute(
-            select(ReviewResolution, Reviewer.display_name, ReviewItem, Job.job_ref)
-            .join(Reviewer, Reviewer.id == ReviewResolution.reviewer_id)
-            .join(ReviewItem, ReviewItem.id == ReviewResolution.review_item_id)
-            .join(Job, Job.id == ReviewItem.job_id)
-            .order_by(ReviewResolution.created_at.desc(), ReviewResolution.id.desc())
-            .limit(limit)
-        ).all()
+def resolutions_query() -> Select:
+    return (
+        select(ReviewResolution, Reviewer.display_name, ReviewItem, Job.job_ref)
+        .join(Reviewer, Reviewer.id == ReviewResolution.reviewer_id)
+        .join(ReviewItem, ReviewItem.id == ReviewResolution.review_item_id)
+        .join(Job, Job.id == ReviewItem.job_id)
+        .order_by(ReviewResolution.created_at.desc(), ReviewResolution.id.desc())
     )
 
 
@@ -628,7 +632,7 @@ def dashboard(
         totals=totals,
         status_rows=status_rows,
         recent_jobs=recent_jobs,
-        recent_activity=resolutions_for(session, 6),
+        recent_activity=session.execute(resolutions_query().limit(6)).all(),
     )
 
 
@@ -643,25 +647,33 @@ def queue(
     request: Request,
     track: str,
     cursor: str | None = None,
+    page: int = 1,
     reviewer: Reviewer = Depends(principal),
     session: Session = Depends(get_session),
 ) -> Response:
     if track not in ("extraction", "conflicts"):
         raise HTTPException(404)
-    query = select(ReviewItem).where(
+    review_track = "conflict" if track == "conflicts" else "extraction"
+    conditions = (
         ReviewItem.status.in_(("open", "in_progress")),
-        ReviewItem.track == ("conflict" if track == "conflicts" else "extraction"),
+        ReviewItem.track == review_track,
     )
+    query = select(ReviewItem).where(*conditions).order_by(ReviewItem.created_at, ReviewItem.id)
+    counts = counts_for(session)
+    total = counts.get(review_track, 0)
     if cursor:
-        previous = session.scalar(query.where(ReviewItem.id == cursor))
-        if previous is None:
+        previous = session.get(ReviewItem, cursor)
+        if previous is None or previous.track != review_track:
             raise HTTPException(400, "Invalid queue cursor; return to the queue")
-        query = query.where(
-            (ReviewItem.created_at > previous.created_at)
-            | ((ReviewItem.created_at == previous.created_at) & (ReviewItem.id > previous.id))
+        position = or_(
+            ReviewItem.created_at < previous.created_at,
+            (ReviewItem.created_at == previous.created_at) & (ReviewItem.id <= previous.id),
         )
-    items = list(session.scalars(query.order_by(ReviewItem.created_at, ReviewItem.id).limit(101)))
-    next_cursor = items[99].id if len(items) > 100 else None
+        preceding = session.scalar(
+            select(func.count()).select_from(ReviewItem).where(*conditions, position)
+        )
+        page = (preceding or 0) // REVIEW_PAGE_SIZE + 1
+    query, pagination = paginate(query, page, total)
     return render(
         request,
         "Extraction review" if track == "extraction" else "Conflict review",
@@ -671,10 +683,11 @@ def queue(
             if track == "extraction"
             else "Record the client's decision when source documents disagree."
         ),
-        items=items[:100],
+        items=list(session.scalars(query)),
         track=track,
-        counts=counts_for(session),
-        next_cursor=next_cursor,
+        counts=counts,
+        pagination_path=f"/review/queues/{track}",
+        **pagination,
     )
 
 
@@ -690,7 +703,6 @@ def jobs(
 ) -> Response:
     if status not in (None, *JOB_STATUSES):
         raise HTTPException(404)
-    page = max(1, page)
     conditions = []
     if status:
         conditions.append(Job.status == status)
@@ -707,31 +719,27 @@ def jobs(
         base = base.where(*conditions)
         count_query = count_query.where(*conditions)
     total = session.scalar(count_query) or 0
-    rows = list(
-        session.execute(
-            base.order_by(Job.updated_at.desc(), Job.id.desc())
-            .offset((page - 1) * JOBS_PER_PAGE)
-            .limit(JOBS_PER_PAGE)
-        ).all()
+    statement, pagination = paginate(
+        base.order_by(Job.updated_at.desc(), Job.id.desc()), page, total
     )
-    pages = max(1, (total + JOBS_PER_PAGE - 1) // JOBS_PER_PAGE)
     return render(
         request,
         "Jobs",
         template="jobs.html",
         subtitle="Every extraction job, its progress and its review load.",
-        rows=rows,
-        total=total,
-        page=page,
-        pages=pages,
+        rows=session.execute(statement).all(),
         status=status,
         client=client,
         query=q or "",
+        pagination_filters={
+            key: value for key, value in (("status", status), ("client", client), ("q", q)) if value
+        },
         status_counts=dict(
             session.execute(select(Job.status, func.count()).group_by(Job.status)).all()
         ),
         clients=list(session.scalars(select(Client).order_by(Client.name))),
         counts=counts_for(session),
+        **pagination,
     )
 
 
@@ -946,14 +954,13 @@ def job_detail(
             (row for row in documents if row.id in active_ids), documents[0] if documents else None
         )
     workspace = workspace_data(session, selected) if selected else {}
-    line_item_table = workspace.get("line_item_table") or {}
+    table_panels = workspace.get("table_panels") or {}
     scalar_fields = workspace.get("scalar_fields") or {}
     active_tab = "fields"
-    show_items = tab == "items" or (
-        tab is None and not scalar_fields and bool(line_item_table.get("rows"))
-    )
-    if line_item_table and show_items:
-        active_tab = "items"
+    if tab in table_panels:
+        active_tab = tab
+    elif tab is None and not scalar_fields:
+        active_tab = next((key for key, panel in table_panels.items() if panel["rows"]), "fields")
     if selected:
         page = max(selected.page_start, min(page, selected.page_end))
     document_fields = {document.id: _field_rows(document) for document in documents}
@@ -1038,41 +1045,47 @@ def finish_job(
 @router.get("/activity")
 def activity(
     request: Request,
+    page: int = 1,
     reviewer: Reviewer = Depends(principal),
     session: Session = Depends(get_session),
 ) -> Response:
-    rows = resolutions_for(session, 100)
     outcomes = dict(
         session.execute(
             select(ReviewResolution.outcome, func.count()).group_by(ReviewResolution.outcome)
         ).all()
     )
+    statement, pagination = paginate(resolutions_query(), page, sum(outcomes.values()))
     return render(
         request,
         "Activity",
         template="activity.html",
         subtitle="Decisions recorded by the review team, newest first.",
-        rows=rows,
+        rows=session.execute(statement).all(),
         outcomes=outcomes,
         counts=counts_for(session),
+        **pagination,
     )
 
 
 @router.get("/team")
 def team(
     request: Request,
+    page: int = 1,
     reviewer: Reviewer = Depends(principal),
     session: Session = Depends(get_session),
 ) -> Response:
-    members = list(
-        session.scalars(select(Reviewer).order_by(Reviewer.display_name, Reviewer.username))
+    statement, pagination = paginate(
+        select(Reviewer).order_by(Reviewer.display_name, Reviewer.username),
+        page,
+        session.scalar(select(func.count()).select_from(Reviewer)) or 0,
     )
+    members = list(session.scalars(statement))
     assigned = dict(
         session.execute(
             select(ReviewItem.assigned_to, func.count())
             .where(
                 ReviewItem.status.in_(("open", "in_progress")),
-                ReviewItem.assigned_to.is_not(None),
+                ReviewItem.assigned_to.in_([member.id for member in members]),
             )
             .group_by(ReviewItem.assigned_to)
         ).all()
@@ -1085,30 +1098,33 @@ def team(
         members=members,
         assigned=assigned,
         counts=counts_for(session),
+        **pagination,
     )
 
 
 @router.get("/clients")
 def clients(
     request: Request,
+    page: int = 1,
     reviewer: Reviewer = Depends(principal),
     session: Session = Depends(get_session),
 ) -> Response:
-    rows = list(
-        session.execute(
-            select(Client, func.count(Job.id))
-            .outerjoin(Job, Job.client_id == Client.id)
-            .group_by(Client.id)
-            .order_by(Client.name)
-        ).all()
+    statement, pagination = paginate(
+        select(Client, func.count(Job.id))
+        .outerjoin(Job, Job.client_id == Client.id)
+        .group_by(Client.id)
+        .order_by(Client.name, Client.id),
+        page,
+        session.scalar(select(func.count()).select_from(Client)) or 0,
     )
     return render(
         request,
         "Clients",
         template="clients.html",
         subtitle="Tenants submitting documents through the API.",
-        rows=rows,
+        rows=session.execute(statement).all(),
         counts=counts_for(session),
+        **pagination,
     )
 
 
@@ -1137,7 +1153,7 @@ def workspace_data(session: Session, row: Document) -> dict[str, Any]:
     return dict(
         document=payload,
         display_fields=display_fields,
-        **invoice_line_items(row.document_type, display_fields, payload.get("tables") or {}),
+        **document_line_items(row.document_type, display_fields, payload.get("tables") or {}),
         boxes=boxes,
         labels=history(session, document_id=row.id),
         item=session.scalar(
@@ -1289,17 +1305,19 @@ def media(
         if page
         else None
     )
-    if document.purged_at or not key:
+    if document.purged_at or (page is not None and page.purged_at):
         return HTMLResponse(
-            "Source media expired. The extraction record remains available.",
+            "Source preview was removed. The extraction record remains available.",
             status_code=410,
             headers={"Cache-Control": "no-store"},
         )
+    if not key:
+        raise HTTPException(410, "Source preview unavailable")
     try:
         with request.app.state.storage.get(key) as stream:
             data = stream.read()
     except FileNotFoundError:
-        raise HTTPException(410, "Source media expired") from None
+        raise HTTPException(410, "Source preview unavailable") from None
     return Response(data, media_type="image/jpeg", headers={"Cache-Control": "no-store"})
 
 
@@ -1314,17 +1332,19 @@ def media_source(
     if document is None:
         raise HTTPException(404)
     file = session.get(File, document.file_id)
-    if document.purged_at or file is None or file.purged_at or not file.storage_key:
+    if document.purged_at or (file is not None and file.purged_at):
         return HTMLResponse(
-            "Original document expired. The extraction record remains available.",
+            "Original document was removed. The extraction record remains available.",
             status_code=410,
             headers={"Cache-Control": "no-store"},
         )
+    if file is None or not file.storage_key:
+        raise HTTPException(410, "Original document unavailable")
     try:
         with request.app.state.storage.get(file.storage_key) as stream:
             data = stream.read()
     except FileNotFoundError:
-        raise HTTPException(410, "Original document expired") from None
+        raise HTTPException(410, "Original document unavailable") from None
     return Response(
         data,
         media_type=file.content_type,

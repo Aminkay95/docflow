@@ -52,6 +52,19 @@ BL_FIELD_SET = FieldSet(
                 "hs_code",
             ),
         ),
+        *container_specs(
+            "line_items",
+            (
+                "marks",
+                "package_count",
+                "package_type",
+                "gross_weight_kg",
+                "net_weight_kg",
+                "volume_m3",
+                "hs_code",
+            ),
+        ),
+        field("line_items[].description", required=True),
         field("clauses[].text"),
         field("signature.place"),
         field("signature.date", ValueType.DATE),
@@ -67,7 +80,10 @@ class BillOfLading(DocumentEnvelope):
     """Highest layout variance and least arithmetic in the set."""
 
     field_set: ClassVar[FieldSet] = BL_FIELD_SET
-    table_specs: ClassVar[tuple[TableSpec, ...]] = (TableSpec("containers"),)
+    table_specs: ClassVar[tuple[TableSpec, ...]] = (
+        TableSpec("containers"),
+        TableSpec("line_items"),
+    )
 
     document_type: Literal["bill_of_lading"] = "bill_of_lading"
     schema_version: Literal["bl.dcsa-1.0"] = "bl.dcsa-1.0"

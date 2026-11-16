@@ -186,9 +186,18 @@ def api(
         storage_dir=tmp_path / "storage",
         mail_outbox_dir=tmp_path / "outbox",
         resend_api_key="",
+        email_intake_address="",
+        email_intake_webhook_secret="",
         smtp_host="",
         base_url="http://testserver",
         webhook_allow_private_targets=True,
+        # Hermetic pipeline: init kwargs beat env vars and .env, so the ICM
+        # flags flipped for the real worker cannot leak into these tests, and
+        # the suite never reaches a live provider (tests default to mock).
+        provider="mock",
+        llm_classification_enabled=False,
+        stage_prompts_enabled=False,
+        llm_extraction_priority=False,
     )
     app = create_app(settings)
     factory: sessionmaker[Session] = app.state.session_factory

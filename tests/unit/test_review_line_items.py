@@ -2,7 +2,7 @@ from copy import deepcopy
 
 import pytest
 
-from trade_extract.review.line_items import invoice_line_items
+from trade_extract.review.line_items import document_line_items
 
 
 @pytest.mark.parametrize("document_type", ["commercial_invoice", "proforma_invoice"])
@@ -16,7 +16,7 @@ def test_invoice_items_group_by_numeric_index_without_changing_evidence(document
         "line_items[2].custom_column": {"value": "Retained"},
     }
     before = deepcopy(fields)
-    result = invoice_line_items(document_type, fields, {})
+    result = document_line_items(document_type, fields, {})
     assert result["scalar_fields"] == {"seller.name": fields["seller.name"]}
     table = result["line_item_table"]
     assert [row["index"] for row in table["rows"]] == [2, 10]
@@ -36,7 +36,7 @@ def test_invoice_items_group_by_numeric_index_without_changing_evidence(document
 
 
 def test_line_item_empty_and_incomplete_states_do_not_invent_rows():
-    result = invoice_line_items(
+    result = document_line_items(
         "commercial_invoice",
         {},
         {"line_items": {"row_count_stated": 3, "unresolved_rows": [0, 1, 2]}},
@@ -48,6 +48,6 @@ def test_line_item_empty_and_incomplete_states_do_not_invent_rows():
 
 def test_other_document_types_keep_existing_flat_fields():
     fields = {"line_items[0].description": {"value": "Existing field"}}
-    result = invoice_line_items("packing_list", fields, {})
+    result = document_line_items("packing_list", fields, {})
     assert result["scalar_fields"] is fields
     assert result["line_item_table"] is None

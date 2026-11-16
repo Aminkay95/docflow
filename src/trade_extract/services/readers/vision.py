@@ -48,6 +48,7 @@ class VisionReader:
         # Preserve the original one-call interface for a single whole-page batch.
         payload: dict[str, Any] | None = None
         model = ""
+        finish_reason = None
         for image, batch in batches:
             metadata = [
                 {
@@ -79,6 +80,8 @@ class VisionReader:
                     + json.dumps(metadata),
                 )
             )
+            if result.finish_reason in {"length", "max_tokens"}:
+                finish_reason = result.finish_reason
             if not self.crops and len(batches) == 1:
                 return result
             raw = (
@@ -106,7 +109,11 @@ class VisionReader:
                     ):
                         raise ValueError("batch_citation_not_attached")
                     match = re.match(r"([a-z_]+)\[(\d+)\]", path)
-                    if match and self.crops:
+                    if (
+                        match
+                        and self.crops
+                        and match.group(1) in {spec.name for spec in doc.table_specs}
+                    ):
                         relevant = [
                             c
                             for c in batch
@@ -158,4 +165,4 @@ class VisionReader:
                             prior["unresolved_rows"]
                         )
             model = result.model
-        return ProviderResult(payload or {}, model)
+        return ProviderResult(payload or {}, model, finish_reason=finish_reason)

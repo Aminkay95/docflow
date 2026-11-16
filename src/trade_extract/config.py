@@ -51,6 +51,10 @@ class Settings(BaseSettings):
     resend_api_key: SecretStr = SecretStr("")
     resend_api_url: str = "https://api.resend.com/emails"
     resend_from: str = ""
+    email_intake_address: str = ""
+    email_intake_client_slug: str = ""
+    email_intake_poll_seconds: float = Field(default=60, ge=10)
+    email_intake_webhook_secret: SecretStr = SecretStr("")
     resend_timeout_seconds: float = Field(default=10, gt=0, le=60)
     smtp_host: str = ""
     smtp_port: int = Field(default=587, ge=1, le=65535)
@@ -63,7 +67,10 @@ class Settings(BaseSettings):
     password_reset_ttl_minutes: int = Field(default=30, ge=5, le=1440)
     password_reset_min_length: int = Field(default=12, ge=8, le=128)
 
-    provider: Literal["mock", "deepseek"] = "mock"
+    provider: Literal["mock", "deepseek", "local"] = "mock"
+    local_model_base_url: str = "http://127.0.0.1:8080/v1"
+    local_model_name: str = "qwen3.5-4b"
+    local_model_timeout_seconds: float = Field(default=900, gt=0)
     deepseek_api_key: SecretStr = SecretStr("")
     deepseek_base_url: str = "https://api.deepseek.com"
     deepseek_vision_model: Literal["deepseek-flash"] = "deepseek-flash"
@@ -138,9 +145,9 @@ class Settings(BaseSettings):
     conditioning_max_enlargement: float = Field(default=1, ge=1, le=2)
     segmentation_min_confidence: float = Field(default=0.55, ge=0.0, le=1.0)
 
-    # ICM stage-file pipeline: stage-01 LLM classify between prepare and extract,
-    # stage-02 type-file extraction contracts. Both default to legacy behavior.
-    llm_classification_enabled: bool = False
+    # Let the model classify documents that cannot take the local fast path.
+    llm_classification_enabled: bool = True
+    local_classification_fast_path: bool = True
     stage_prompts_enabled: bool = False
     # LLM-primary extraction: always call the provider with the stage contract
     # and document instead of taking the local-complete fast path. Local
@@ -184,7 +191,15 @@ class Settings(BaseSettings):
             raise ValueError("MAX_REQUEST_BYTES must exceed MAX_FILE_BYTES")
         if self.max_pages_per_submission < self.max_pages_per_file:
             raise ValueError("MAX_PAGES_PER_SUBMISSION must be at least MAX_PAGES_PER_FILE")
-        if self.resend_api_key.get_secret_value().strip() and self.mail_from == _DEFAULT_MAIL_FROM:
+        if self.email_intake_address.strip() and not (
+            self.email_intake_client_slug.strip() and self.resend_api_key.get_secret_value().strip()
+        ):
+            raise ValueError("Email intake requires EMAIL_INTAKE_CLIENT_SLUG and RESEND_API_KEY")
+        if (
+            self.resend_api_key.get_secret_value().strip()
+            and self.mail_from == _DEFAULT_MAIL_FROM
+            and not self.email_intake_address.strip()
+        ):
             raise ValueError(
                 "RESEND_FROM is required when RESEND_API_KEY is set; use an address on a "
                 "domain verified in Resend"
@@ -192,7 +207,7 @@ class Settings(BaseSettings):
         if self.environment == "production":
             _reject_placeholder("SECRET_KEY", self.secret_key)
             _reject_placeholder("API_KEY_PEPPER", self.api_key_pepper)
-            if not (self.resend_api_key.get_secret_value().strip() or self.smtp_host.strip()):
+            if not (self.resend_can_send or self.smtp_host.strip()):
                 raise ValueError(
                     "RESEND_API_KEY or SMTP_HOST is required in production so password "
                     "reset emails can be delivered"
@@ -205,6 +220,12 @@ class Settings(BaseSettings):
             if self.storage_backend == "s3" and not self.s3_bucket:
                 raise ValueError("S3_BUCKET is required when STORAGE_BACKEND=s3")
         return self
+
+    @property
+    def resend_can_send(self) -> bool:
+        return bool(self.resend_api_key.get_secret_value().strip()) and (
+            self.mail_from != _DEFAULT_MAIL_FROM
+        )
 
     @property
     def mail_from(self) -> str:

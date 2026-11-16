@@ -5,8 +5,8 @@ Job: extract stated values from a segment already classified as
 stage, one job. Reads this file only.
 
 > Highest layout variance and least arithmetic in the set. Extract
-> identities (numbers, parties, routing, dates) and the `containers`
-> table verbatim — there are no totals to reconcile, so `advisory`
+> identities (numbers, parties, routing, dates), cargo `line_items`,
+> and `containers` verbatim — there are no totals to reconcile, so `advisory`
 > checks only.
 
 ## What to Load
@@ -60,7 +60,13 @@ stage 01 — never extract a mismatched segment.
    `net_weight_kg`, `volume_m3`, `marks`, `description`,
    `hs_code` (6/8/10 digits). Honestly report `truncated` /
    `unresolved_rows` on many-container B/Ls — never drop rows.
-8. Fill `clauses[].text` when printed, and
+8. Fill `line_items` with one row per printed cargo entry in source order.
+   Capture `description`, `marks`, `package_count`, `package_type`,
+   `net_weight_kg`, `gross_weight_kg`, `volume_m3`, and `hs_code` when
+   stated. Cargo rows may exist without a container number or span several
+   containers. Keep cargo and container indices independent. Exclude headings,
+   shipment totals, and the separate container list from cargo rows.
+9. Fill `clauses[].text` when printed, and
    `signature.place` / `signature.date` / `signature.signed_by` /
    `agent.name` when shown.
 
@@ -75,7 +81,7 @@ One JSON object matching the supplied schema (full contract, or
 
 - `values[]`: `{path, value, evidence_id, page box}` — or compact
   `{path, value, evidence_id}` — one entry per allowed path, at most once
-- `tables`: `containers` rows with per-cell provenance (or `{}` when
+- `tables`: `line_items` and `containers` rows with per-cell provenance (or `{}` when
   no rows are stated)
 - No explanations, no computed sums, no unproven ranges.
 
@@ -84,6 +90,6 @@ One JSON object matching the supplied schema (full contract, or
 - Required set present or honestly absent (→ review): `bl.number`,
   `bl.issue_date`, `carrier.name`, `shipper.name`, `consignee.name`,
   `routing.port_of_loading`, `routing.port_of_discharge`.
-- `containers` complete or honestly truncated — never silently cut.
+- Cargo and container rows complete or honestly truncated — never silently cut.
 - Every value is an exact substring of its cited evidence line.
 - Container numbers pass check-digit shape; no invented containers.

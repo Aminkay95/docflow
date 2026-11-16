@@ -141,7 +141,7 @@ def requeue_stale(
     )
     requeued = 0
     dead: list[JobTask] = []
-    for task in sorted(stale, key=lambda t: (t.job_id, t.id)):
+    for task in sorted(stale, key=lambda t: (t.job_id or "", t.id)):
         session.scalar(
             select(Job)
             .where(Job.id == task.job_id)
@@ -201,6 +201,8 @@ def terminalise_dead_task(
 ) -> None:
     """Failure is terminal: a dead task fails its file and submission, then notifies."""
 
+    if task.job_id is None:
+        return
     job = session.scalar(
         select(Job)
         .where(Job.id == task.job_id)

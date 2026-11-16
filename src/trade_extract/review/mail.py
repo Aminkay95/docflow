@@ -30,7 +30,7 @@ def send_password_reset_email(
 ) -> None:
     """Deliver the reset link through Resend, SMTP, or the development outbox.
 
-    Resend wins when ``RESEND_API_KEY`` is set, then SMTP when ``SMTP_HOST`` is
+    Resend wins when its key and sender are set, then SMTP when ``SMTP_HOST`` is
     set, then the outbox. The outbox keeps local development working without a
     mail provider and is never used in production (the settings guard rejects
     production without Resend or SMTP).
@@ -44,7 +44,7 @@ def send_password_reset_email(
         "If you did not request this, you can ignore this message.\n"
     )
 
-    if settings.resend_api_key.get_secret_value().strip():
+    if settings.resend_can_send:
         send_with_resend(settings, recipient, body, http_client=http_client)
         logger.info("password reset email sent via Resend")
         return

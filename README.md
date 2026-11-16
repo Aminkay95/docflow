@@ -40,6 +40,57 @@ Repeated submissions with the same client and `job_ref` share one job. Follow th
 submission. All seven registered types extract; the six noncommercial types always require
 full review. Existing schema versions and local field paths are preserved.
 
+## Extraction workers
+
+Set `PROVIDER=deepseek` or `PROVIDER=local` in `.env` and recreate the
+worker to select the model backend:
+
+```bash
+docker compose up -d --no-deps worker
+```
+
+DeepSeek uses the configured API key. For Qwen, place the
+[Qwen3.5-4B Q4_K_M GGUF and its F16 vision projector](https://huggingface.co/unsloth/Qwen3.5-4B-GGUF/tree/main)
+in `./var/models` or set `LOCAL_MODEL_DIR` to their directory. Set
+`PROVIDER=local` and wait for the CPU model service before starting the stack:
+
+```bash
+docker compose up -d --wait model
+docker compose up -d
+```
+
+The worker reaches Qwen at `http://model:8080/v1` within Compose.
+Remove any `LOCAL_MODEL_BASE_URL` override pointing to a host-run server before
+recreating the worker.
+To switch to DeepSeek, set `PROVIDER=deepseek`, recreate the worker as above,
+and use `docker compose stop model` to release the model's CPU and memory.
+
+Docker Compose starts ten extraction workers by default. Each worker processes one
+task at a time, so up to ten documents can be extracted concurrently when extraction
+tasks are ready. Set `EXTRACTION_WORKER_REPLICAS` in `.env` to adjust for available
+CPU and memory. Apply the configured count to a running Compose stack with
+`docker compose up -d worker`.
+
+## Inbound PDF email
+
+Set `RESEND_API_KEY` to a key with receiving access, `EMAIL_INTAKE_ADDRESS` to
+the pilot address on a Resend receiving domain, and `EMAIL_INTAKE_CLIENT_SLUG`
+to the active Trade Extract client that owns that address.
+
+In Resend, register the public HTTPS URL ending in
+`/v1/webhooks/resend/inbound` for the `email.received` event. Save its signing
+secret as `EMAIL_INTAKE_WEBHOOK_SECRET`, apply the database migrations, and
+restart the API and workers. Each distinct PDF sent to the configured address
+as the sole To recipient creates a Jobs entry. Resend retries and event replays
+reuse the original attachment identity.
+
+With the signing secret unset, the API continues to check the inbox every
+minute by default. Setting it enables webhook delivery and disables inbox
+polling. Verify delivery with a test PDF and confirm that replaying the event
+does not create another job.
+
+[Resend receiving domain setup](https://resend.com/docs/dashboard/receiving/custom-domains)
+
 ## Tests
 
 Node.js is required for the frontend behavioral checks.

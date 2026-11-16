@@ -13,7 +13,7 @@
   <header class="card-header">
     <div>
       <h2 class="card-title">{{ 'Extraction' if track == 'extraction' else 'Conflict' }} queue</h2>
-      <p class="card-subtitle">Showing {{ items | length }} open item{{ '' if items | length == 1 else 's' }}{% if next_cursor %} · up to 100 per page{% endif %}.</p>
+      <p class="card-subtitle">{{ total }} open item{{ "" if total == 1 else "s" }}.</p>
     </div>
     <a class="btn btn-ghost btn-sm" href="{{ '/review/queues/extraction' if track == 'extraction' else '/review/queues/conflicts' }}">{{ icon('rotate-cw', 14) }}<span>Refresh</span></a>
   </header>
@@ -43,11 +43,6 @@
     </li>
     {% endfor %}
   </ul>
-  {% if next_cursor %}
-  <footer class="card-footer">
-    <a class="btn btn-secondary btn-sm" href="/review/queues/{{ track }}?cursor={{ next_cursor }}"><span>Next page</span>{{ icon('arrow-right', 14) }}</a>
-  </footer>
-  {% endif %}
   {% else %}
   <div class="empty">
     <span class="empty-icon">{{ icon('inbox', 20) }}</span>
@@ -56,5 +51,7 @@
     <a class="btn btn-secondary btn-sm" href="/review/jobs">{{ icon('briefcase', 14) }}<span>Browse jobs</span></a>
   </div>
   {% endif %}
+  {% set pagination_item = "open item" %}
+  {% include "partials/pagination.html" %}
 </section>
 {% endblock %}

@@ -1,0 +1,21 @@
+{% from "partials/icon.html" import icon %}
+{% if pages > 1 %}
+{% set path = pagination_path | default(request.url.path) %}
+{% set filters = pagination_filters | default({}) %}
+<footer class="card-footer pagination-footer">
+  <p class="text-muted">{{ total }} {{ pagination_item }}{{ '' if total == 1 else 's' }}</p>
+  <nav class="pagination" aria-label="Pagination">
+    {% if page > 1 %}
+    <a class="btn btn-secondary btn-sm" rel="prev" href="{{ path }}?{{ dict(filters, page=page - 1) | urlencode }}">{{ icon('chevron-left', 14) }}<span>Previous</span></a>
+    {% else %}
+    <span class="btn btn-secondary btn-sm" aria-disabled="true">{{ icon('chevron-left', 14) }}<span>Previous</span></span>
+    {% endif %}
+    <span class="pagination-label">Page <strong>{{ page }}</strong> of {{ pages }}</span>
+    {% if page < pages %}
+    <a class="btn btn-secondary btn-sm" rel="next" href="{{ path }}?{{ dict(filters, page=page + 1) | urlencode }}"><span>Next</span>{{ icon('chevron-right', 14) }}</a>
+    {% else %}
+    <span class="btn btn-secondary btn-sm" aria-disabled="true"><span>Next</span>{{ icon('chevron-right', 14) }}</span>
+    {% endif %}
+  </nav>
+</footer>
+{% endif %}

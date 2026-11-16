@@ -10,6 +10,30 @@ rate. A page that exceeds the configured safety ceiling or evidence budget is a 
 not a silently missing prediction. Cost and accuracy claims require labelled truth; unlabelled public
 samples are smoke tests only and must not be reported as accuracy evidence.
 
+## Upload-to-review latency
+
+The document target is at least 95% of uploads returning a typed extraction with
+fields in under 120 seconds, including upload, queueing, and finalization. Run on
+a migrated test stack with ten workers and a test client key in
+`EXTRACTION_BENCHMARK_API_KEY`. Use representative, filled documents, with at
+least 20 samples per cohort. Measure digital PDFs and scans separately, first with
+`--concurrency 1` and then with `--concurrency 10`.
+
+```powershell
+$pdfs = (Get-ChildItem <digital-sample-directory> -Filter *.pdf).FullName
+uv run python -m scripts.benchmark_extraction --cohort digital --concurrency 10 $pdfs
+```
+
+The benchmark reports per-file latency and counts timeouts, failures, and empty
+extractions against the target. It exits with status 1 if the target is missed.
+For a before-and-after comparison, run the same samples and provider settings
+with `LOCAL_CLASSIFICATION_FAST_PATH=false` and then `true`. When model
+classification is enabled, the fast path sends segments with strong, explicit
+headings straight to extraction. DeepSeek scans with no embedded text go through
+the existing OCR classification route. Use the labelled evaluation above to
+compare field and table accuracy, and use worker OCR timings and provider call
+records to investigate slow documents.
+
 The corpus unit is a **complete caller-grouped job**. Each `*.labels.json` manifest
 requires a unique `job_id`, explicit `origin: real|synthetic`, `complete: true`,
 all document identities and relative evidence paths, a field label map, row counts,

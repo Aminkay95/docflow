@@ -3,10 +3,8 @@ filesystem level: stage 01 classify, stage 02 extract per registered type).
 
 The registry stays the authority on fields and JSON schema. Stage files under
 ``providers/prompts/`` are auditable contract views; the required-path parity
-test keeps them in sync. The loader is import-lazy so the stable prompt hash
-used by ``tests/unit/test_providers.py`` stays unchanged unless the pipeline is
-explicitly enabled with ``LLM_CLASSIFICATION_ENABLED`` or
-``STAGE_PROMPTS_ENABLED``.
+test keeps them in sync. Extraction uses the stage-02 prompt files when
+``STAGE_PROMPTS_ENABLED`` is enabled.
 """
 
 from __future__ import annotations
@@ -42,7 +40,7 @@ CLASSIFICATION_SCHEMA: dict[str, Any] = {
     "contract": "classification_v1",
     "type": "object",
     "properties": {
-        "document_type": {"type": "string"},
+        "document_type": {"type": "string", "enum": sorted(set(DOCUMENT_SCHEMAS) | {"unknown"})},
         "confidence": {"type": "number", "minimum": 0.0, "maximum": 1.0},
         "reason": {"type": "string"},
     },
@@ -84,7 +82,9 @@ def type_system_prompt(document_type: str, schema_json: dict[str, Any]) -> str:
         load_stage_text(stage_file)
         + "\nResponse contract precedence: The supplied schema overrides all response-shape "
         "instructions above. For evidence_values_v1 return only values (path, value, evidence_id) "
-        "and empty tables; never emit an envelope, provenance, boxes, optional fields or rows. "
+        "and tables metadata only when permitted; never emit an envelope, provenance or boxes. "
+        "Extract stated optional and indexed fields permitted by the current phase schema. "
+        "Respect finite row ranges; do not treat auxiliary arrays as line_items. "
         "Cite exact evidence text; OCR values must equal whole spans. Omit unstated values.\n"
         + json.dumps(
             {"document_type": document_type, "schema": schema_json},
@@ -110,7 +110,10 @@ def _parse_verdict(raw_json: str | dict[str, Any]) -> ClassificationVerdict:
     if document_type not in ALLOWED_TYPES:
         raise ValueError(f"classification_invalid_type:{document_type}")
     confidence = data.get("confidence", 0.0)
-    confidence_f = float(confidence)
+    try:
+        confidence_f = float(confidence)
+    except (TypeError, ValueError) as exc:
+        raise ValueError("classification_invalid_confidence") from exc
     if not (0.0 <= confidence_f <= 1.0):
         raise ValueError("classification_confidence_out_of_range")
     reason = str(data.get("reason", "")).strip()

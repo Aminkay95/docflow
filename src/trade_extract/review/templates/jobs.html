@@ -79,22 +79,6 @@
       </tbody>
     </table>
   </div>
-  <footer class="card-footer spread">
-    <p class="text-muted">{{ total }} job{{ '' if total == 1 else 's' }}{% if status %} · {{ status | humanize }}{% endif %}</p>
-    <div class="pagination">
-      {% if page > 1 %}
-      <a class="btn btn-secondary btn-sm" href="/review/jobs?page={{ page - 1 }}{% if status %}&status={{ status }}{% endif %}{% if client %}&client={{ client }}{% endif %}{% if query %}&q={{ query | urlencode }}{% endif %}">{{ icon('chevron-left', 14) }}<span>Previous</span></a>
-      {% else %}
-      <span class="btn btn-secondary btn-sm" aria-disabled="true">{{ icon('chevron-left', 14) }}<span>Previous</span></span>
-      {% endif %}
-      <span class="pagination-label">Page <strong>{{ page }}</strong> of {{ pages }}</span>
-      {% if page < pages %}
-      <a class="btn btn-secondary btn-sm" href="/review/jobs?page={{ page + 1 }}{% if status %}&status={{ status }}{% endif %}{% if client %}&client={{ client }}{% endif %}{% if query %}&q={{ query | urlencode }}{% endif %}"><span>Next</span>{{ icon('chevron-right', 14) }}</a>
-      {% else %}
-      <span class="btn btn-secondary btn-sm" aria-disabled="true"><span>Next</span>{{ icon('chevron-right', 14) }}</span>
-      {% endif %}
-    </div>
-  </footer>
   {% else %}
   <div class="empty">
     <span class="empty-icon">{{ icon('search', 20) }}</span>
@@ -106,5 +90,7 @@
     </div>
   </div>
   {% endif %}
+  {% set pagination_item = "job" %}
+  {% include "partials/pagination.html" %}
 </section>
 {% endblock %}

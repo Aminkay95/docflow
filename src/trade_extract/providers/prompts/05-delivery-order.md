@@ -45,12 +45,18 @@ stage 01 — never extract a mismatched segment.
    `delivery_order.valid_until` (ISO),
    `bill_of_lading.number` (req — cross-document anchor, quote verbatim),
    `carrier.name`, `agent.name`, `consignee.name` (req),
-   `consignee.address.line1`, `notify_party.name`.
-4. Fill release block: `release.terminal`, `release.warehouse`,
+   `consignee.address.line1`, `notify_party.name`. Read the number
+   beside the D/O label in its own column. Leave a blank D/O number
+   absent even when a house or master B/L number is printed nearby.
+   Capture the consignee when stated, including when it is also the
+   notify party.
+4. Fill release block: `release.place_of_delivery`, `release.terminal`, `release.warehouse`,
    `release.reference`, `release.free_time_days` (INTEGER).
 5. Fill the `containers` table: one row per container. Cells:
    `number` (ISO 6346 check digit), `seal`, `type`,
-   `gross_weight_kg`, `package_count` (INTEGER), `package_type`.
+   `gross_weight_kg` when kilograms are printed, otherwise `gross_weight`,
+   `volume`, `package_count` (INTEGER), `package_type`.
+   Read each value from its own column.
    Honestly report `truncated` / `unresolved_rows` — never drop rows.
 6. Fill cargo + charges: `cargo.description`, `cargo.marks`,
    `charges[].description` / `charges[].amount` /
@@ -59,7 +65,8 @@ stage 01 — never extract a mismatched segment.
 
 Checkpoint: absent required fields emit what you have and let code
 mark `review_required`. If the anchor B/L number is unreadable,
-say so in the table metadata — never copy it from a prior document.
+leave it absent. Run header and container phases separately and follow the
+supplied phase contract. Preserve printed text for source citations.
 Charges are extracted as stated; code only checks advisory.
 
 ## Outputs

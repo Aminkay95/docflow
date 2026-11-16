@@ -65,9 +65,16 @@ def handle(session: Session, task: JobTask, *, settings: Settings, clock: Clock)
         document.decision_reason = "classification_no_text_layer"
         document.updated_at = now
         observe(session, document, now)
-        save_document(
-            session, document, [], {"value": "review", "reasons": [document.decision_reason]}
+        decision = decide_document(
+            document_type=document.document_type,
+            status=document.status,
+            checks=[],
+            policy_id=policy.id,
+            policy_version=policy.version,
+            config=dict(policy.config),
         )
+        decision["reasons"] = [document.decision_reason]
+        save_document(session, document, [], decision)
         tasks_repo.rearm(
             session,
             dedupe_key=f"finalize_submission:{document.submission_id}",
@@ -106,9 +113,16 @@ def handle(session: Session, task: JobTask, *, settings: Settings, clock: Clock)
         document.decision_reason = f"classification_failed:{type(exc).__name__}"
         document.updated_at = now
         observe(session, document, now)
-        save_document(
-            session, document, [], {"value": "review", "reasons": [document.decision_reason]}
+        decision = decide_document(
+            document_type=document.document_type,
+            status=document.status,
+            checks=[],
+            policy_id=policy.id,
+            policy_version=policy.version,
+            config=dict(policy.config),
         )
+        decision["reasons"] = [document.decision_reason]
+        save_document(session, document, [], decision)
         tasks_repo.rearm(
             session,
             dedupe_key=f"finalize_submission:{document.submission_id}",

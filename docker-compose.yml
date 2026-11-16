@@ -17,6 +17,10 @@ x-app-env: &app-env
   RESEND_FROM: ${RESEND_FROM:-}
   RESEND_API_URL: ${RESEND_API_URL:-https://api.resend.com/emails}
   RESEND_TIMEOUT_SECONDS: ${RESEND_TIMEOUT_SECONDS:-10}
+  EMAIL_INTAKE_ADDRESS: ${EMAIL_INTAKE_ADDRESS:-}
+  EMAIL_INTAKE_CLIENT_SLUG: ${EMAIL_INTAKE_CLIENT_SLUG:-}
+  EMAIL_INTAKE_POLL_SECONDS: ${EMAIL_INTAKE_POLL_SECONDS:-60}
+  EMAIL_INTAKE_WEBHOOK_SECRET: ${EMAIL_INTAKE_WEBHOOK_SECRET:-}
   SMTP_HOST: ${SMTP_HOST:-}
   SMTP_PORT: ${SMTP_PORT:-587}
   SMTP_USERNAME: ${SMTP_USERNAME:-}
@@ -58,7 +62,7 @@ services:
       timeout: 5s
       retries: 10
     ports:
-      - "5432:5432"
+      - "${POSTGRES_HOST_PORT:-5432}:5432"
 
   migrate:
     build:
@@ -129,6 +133,49 @@ services:
       timeout: 5s
       retries: 5
 
+  model:
+    image: ghcr.io/ggml-org/llama.cpp:server-b10524@sha256:d88f41f7675f8b30d7213a917f72a48f05d0549af4d1be7e712ebb130a235415
+    profiles: ["local"]
+    restart: unless-stopped
+    environment:
+      LLAMA_ARG_FIT: "${LOCAL_MODEL_FIT:-on}"
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8080/health"]
+      start_period: 180s
+      interval: 10s
+      timeout: 5s
+      retries: 6
+    command:
+      - --model
+      - /models/${LOCAL_MODEL_FILE:-Qwen3.5-4B-Q4_K_M.gguf}
+      - --mmproj
+      - /models/${LOCAL_MODEL_PROJECTOR:-mmproj-F16.gguf}
+      - --no-mmproj-offload
+      - --no-warmup
+      - --n-gpu-layers
+      - "0"
+      - --threads
+      - "${LOCAL_MODEL_THREADS:-4}"
+      - --ctx-size
+      - "${LOCAL_MODEL_CONTEXT:-16384}"
+      - --parallel
+      - "1"
+      - --reasoning
+      - "off"
+      - --alias
+      - "${LOCAL_MODEL_NAME:-qwen3.5-4b}"
+      - --host
+      - "0.0.0.0"
+      - --port
+      - "8080"
+    volumes:
+      - type: bind
+        source: "${LOCAL_MODEL_DIR:-./var/models}"
+        target: /models
+        read_only: true
+        bind:
+          create_host_path: false
+
   worker:
     build:
       context: .
@@ -137,6 +184,9 @@ services:
     environment:
       <<: *app-env
       PROVIDER: ${PROVIDER:-mock}
+      LOCAL_MODEL_BASE_URL: ${LOCAL_MODEL_BASE_URL:-http://model:8080/v1}
+      LOCAL_MODEL_NAME: ${LOCAL_MODEL_NAME:-qwen3.5-4b}
+      LOCAL_MODEL_TIMEOUT_SECONDS: ${LOCAL_MODEL_TIMEOUT_SECONDS:-900}
       DEEPSEEK_API_KEY: ${DEEPSEEK_API_KEY:-}
       DEEPSEEK_BASE_URL: ${DEEPSEEK_BASE_URL:-https://api.deepseek.com}
       DEEPSEEK_VISION_MODEL: ${DEEPSEEK_VISION_MODEL:-deepseek-flash}
@@ -146,8 +196,8 @@ services:
       PROVIDER_MAX_ATTEMPTS: ${PROVIDER_MAX_ATTEMPTS:-3}
       STAGE_PROMPTS_ENABLED: ${STAGE_PROMPTS_ENABLED:-false}
       LLM_EXTRACTION_PRIORITY: ${LLM_EXTRACTION_PRIORITY:-false}
-      # Classification requires the classify task-kind migration before opt-in.
-      LLM_CLASSIFICATION_ENABLED: ${LLM_CLASSIFICATION_ENABLED:-false}
+      LLM_CLASSIFICATION_ENABLED: ${LLM_CLASSIFICATION_ENABLED:-true}
+      LOCAL_CLASSIFICATION_FAST_PATH: ${LOCAL_CLASSIFICATION_FAST_PATH:-true}
       PROVIDER_MAX_REPAIRS: ${PROVIDER_MAX_REPAIRS:-1}
       PROVIDER_MAX_OUTPUT_TOKENS: ${PROVIDER_MAX_OUTPUT_TOKENS:-8192}
       PROVIDER_MAX_EVIDENCE_CHARACTERS_PER_PAGE: ${PROVIDER_MAX_EVIDENCE_CHARACTERS_PER_PAGE:-24000}
@@ -189,6 +239,7 @@ services:
       migrate:
         condition: service_completed_successfully
     deploy:
+      replicas: ${EXTRACTION_WORKER_REPLICAS:-10}
       resources:
         limits:
           memory: 4g

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 from collections import defaultdict, deque
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
@@ -13,13 +14,14 @@ from fastapi.staticfiles import StaticFiles
 from trade_extract.api import openapi as openapi_module
 from trade_extract.api.errors import register_exception_handlers
 from trade_extract.api.middleware import RequestContextMiddleware
-from trade_extract.api.routes import extract, health, jobs, results
+from trade_extract.api.routes import email_webhook, extract, health, jobs, results
 from trade_extract.config import Settings, get_settings
 from trade_extract.db.session import make_engine, session_factory
 from trade_extract.domain.clock import Clock, SystemClock
 from trade_extract.logging import configure_logging
 from trade_extract.review import routes as review_routes
 from trade_extract.review.auth import signer
+from trade_extract.services.email_intake import poll_inbox
 from trade_extract.services.storage import build_storage
 
 
@@ -38,8 +40,21 @@ def create_app(
 
     @asynccontextmanager
     async def lifespan(_: FastAPI) -> AsyncIterator[None]:
-        yield
-        engine.dispose()
+        stop = asyncio.Event()
+        intake = None
+        if settings.email_intake_address.strip() and not (
+            settings.email_intake_webhook_secret.get_secret_value().strip()
+        ):
+            intake = asyncio.create_task(
+                poll_inbox(settings, factory, storage, process_clock, stop)
+            )
+        try:
+            yield
+        finally:
+            stop.set()
+            if intake is not None:
+                await intake
+            engine.dispose()
 
     app = FastAPI(
         title="Trade Extract API",
@@ -66,6 +81,7 @@ def create_app(
     app.include_router(extract.router, prefix="/v1")
     app.include_router(results.router, prefix="/v1")
     app.include_router(jobs.router, prefix="/v1")
+    app.include_router(email_webhook.router, prefix="/v1")
 
     app.include_router(review_routes.router)
     app.mount(

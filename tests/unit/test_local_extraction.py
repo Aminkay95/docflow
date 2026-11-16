@@ -1,8 +1,13 @@
+from dataclasses import replace
+from typing import Any
+
 import pytest
 
 from trade_extract.config import Settings
+from trade_extract.domain.conditioning import VERSION, CoordinateTransform
+from trade_extract.domain.fields import Agreement
 from trade_extract.domain.hashing import document_hash
-from trade_extract.domain.inference import InferenceRequest, ProviderResult
+from trade_extract.domain.inference import InferenceRequest, PageImage, ProviderResult
 from trade_extract.domain.provenance import BBox
 from trade_extract.domain.readers import PageInput, TextCharacter
 from trade_extract.providers.mock import MockProvider
@@ -10,6 +15,7 @@ from trade_extract.schemas.base import EnvelopeSource
 from trade_extract.schemas.registry import get_schema
 from trade_extract.services.extraction import extract
 from trade_extract.services.local_extraction import evidence_lines, extract_local
+from trade_extract.services.readers import VisionReader
 from trade_extract.services.readers.text_layer import TextLayerReader
 
 
@@ -48,20 +54,21 @@ def _source() -> EnvelopeSource:
     )
 
 
-def test_complete_conventional_invoice_uses_local_fast_path_without_provider():
-    page = _page(
-        [
-            "Commercial Invoice No: INV-2048",
-            "Invoice Date: 2026-11-04",
-            "Currency: USD",
-            "Seller: Coastal Exports Ltd",
-            "Buyer: Mombasa Trading Ltd",
-            "Subtotal: 1200.00",
-            "Tax Exclusive Amount: 1200.00",
-            "Grand Total: 1392.00",
-            "Amount Due: 1392.00",
-        ]
-    )
+COMPLETE_INVOICE_LINES = [
+    "Commercial Invoice No: INV-2048",
+    "Invoice Date: 2026-11-04",
+    "Currency: USD",
+    "Seller: Coastal Exports Ltd",
+    "Buyer: Mombasa Trading Ltd",
+    "Subtotal: 1200.00",
+    "Tax Exclusive Amount: 1200.00",
+    "Grand Total: 1392.00",
+    "Amount Due: 1392.00",
+]
+
+
+def test_header_only_conventional_invoice_is_inspected_and_reviewed():
+    page = _page(COMPLETE_INVOICE_LINES)
     source = _source()
     provider = MockProvider()
     stages = []
@@ -70,11 +77,16 @@ def test_complete_conventional_invoice_uses_local_fast_path_without_provider():
         document_type="commercial_invoice",
         source=source,
         pages=(page,),
-        settings=Settings(provider="mock"),
+        settings=Settings(provider="mock", llm_extraction_priority=False),
         progress=stages.append,
     )
     assert result.status == "extracted"
-    assert not provider.requests
+    assert [r.stage for r in provider.requests] == [
+        "invoice_header_party",
+        "invoice_line_items",
+        "invoice_totals_tax",
+    ]
+    assert result.document.status == "review_required"
     assert stages == ["reading", "extracting"]
     assert result.document.fields["invoice.number"].value == "INV-2048"
     assert result.document.fields["totals.payable_amount"].value == "1392.00"
@@ -82,7 +94,7 @@ def test_complete_conventional_invoice_uses_local_fast_path_without_provider():
         field.provenance.document_hash == source.document_hash
         for field in result.document.fields.values()
     )
-    assert "provider_skipped_local_complete" in result.diagnostics
+    assert "provider_skipped_local_complete" not in result.diagnostics
 
 
 def test_ambiguous_duplicate_label_is_not_promoted_locally():
@@ -113,14 +125,14 @@ def test_valid_local_stage_survives_failed_targeted_provider_stage():
         document_type="commercial_invoice",
         source=source,
         pages=(page,),
-        settings=Settings(provider="mock"),
+        settings=Settings(provider="mock", llm_extraction_priority=False),
     )
     assert result.status == "extracted"
     assert result.document.status == "review_required"
     assert result.document.fields["invoice.number"].value == "INV-2048"
     assert "partial_evidence_retained" in result.diagnostics
-    assert len(provider.requests) == 2
-    assert "invoice.number" not in provider.requests[0].schema_json["allowed_scalar_paths"]
+    assert len(provider.requests) == 6
+    assert "invoice.number" in provider.requests[0].schema_json["allowed_scalar_paths"]
     assert provider.requests[0].evidence.count("Compact evidence index:") == 1
 
 
@@ -352,3 +364,96 @@ def test_compact_duplicate_paths_are_rejected_and_envelope_compatibility_is_read
             reconstruct_values(envelope, request, (), reader)
     else:
         assert reconstruct_values(envelope, request, (), reader) is envelope
+
+
+def test_llm_priority_calls_provider_and_keeps_local_as_fallback():
+    page = _page(COMPLETE_INVOICE_LINES)
+    source = _source()
+    provider = MockProvider()
+    result = extract(
+        provider,
+        document_type="commercial_invoice",
+        source=source,
+        pages=(page,),
+        settings=Settings(provider="mock", llm_extraction_priority=True),
+    )
+    # The provider runs despite a complete local document...
+    assert provider.requests
+    assert "mock_fixture_missing" in result.errors
+    assert "provider_skipped_local_complete" not in result.diagnostics
+    # ...and its failure still falls back to the local candidates.
+    assert "partial_evidence_retained" in result.diagnostics
+    assert result.status == "extracted"
+    assert result.document.status == "review_required"
+    assert result.document.fields["invoice.number"].value == "INV-2048"
+
+
+def test_llm_priority_lets_provider_values_dispute_local_candidates():
+    page = _page([*COMPLETE_INVOICE_LINES, "Ref: INV-9999"])
+    source = _source()
+    provider = MockProvider(
+        {
+            ("commercial_invoice", source.document_hash): [
+                ProviderResult(
+                    {
+                        "values": [
+                            {
+                                "path": "invoice.number",
+                                "value": "INV-9999",
+                                "evidence_id": "p0l9",
+                            }
+                        ],
+                        "tables": {},
+                    },
+                    "mock",
+                )
+            ]
+        }
+    )
+    result = extract(
+        provider,
+        document_type="commercial_invoice",
+        source=source,
+        pages=(page,),
+        settings=Settings(provider="mock", llm_extraction_priority=True),
+    )
+    assert provider.requests
+    assert "provider_skipped_local_complete" not in result.diagnostics
+    assert result.status == "extracted", result.errors
+    field = result.document.fields["invoice.number"]
+    assert field.agreement == Agreement.DISPUTED
+    assert {field.value, field.alternatives[0].value} == {"INV-2048", "INV-9999"}
+    # Unrelated local fields survive the merge untouched.
+    assert result.document.fields["totals.payable_amount"].value == "1392.00"
+
+
+def _vision_contract(*, priority: bool) -> dict[str, Any]:
+    # Incomplete locally (no payable line), so the local-complete bypass never
+    # fires and the vision reader is reached in both flag states.
+    page = replace(
+        _page(COMPLETE_INVOICE_LINES[:-1]),
+        image=PageImage(0, b"page-image", 100, 100),
+        conditioning_version=VERSION,
+        transform=CoordinateTransform((100, 100), (100, 100)),
+    )
+    source = _source()
+    provider = MockProvider()
+    result = extract(
+        provider,
+        document_type="commercial_invoice",
+        source=source,
+        pages=(page,),
+        readers=(VisionReader(),),
+        settings=Settings(provider="mock", llm_extraction_priority=priority),
+    )
+    assert provider.requests
+    assert provider.requests[0].stage == "invoice_header_party"
+    assert "mock_fixture_missing" in result.errors
+    return provider.requests[0].schema_json
+
+
+def test_invoice_header_phase_shows_vision_the_full_contract_in_both_priority_modes():
+    stripped = _vision_contract(priority=False)
+    assert "invoice.number" in stripped["properties"]["fields"]["properties"]
+    full = _vision_contract(priority=True)
+    assert "invoice.number" in full["properties"]["fields"]["properties"]

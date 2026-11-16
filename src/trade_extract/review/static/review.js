@@ -657,8 +657,21 @@ if (progressPanel) {
     processing = data.processing;
     progressPanel.dataset.startedAt = data.started_at || progressPanel.dataset.startedAt;
     progressPanel.dataset.terminalAt = data.terminal_at || '';
-    setText('[data-progress-title]', data.title);
-    inside('[data-progress-spinner]').hidden = !processing;
+    setText('[data-progress-title]', processing ? 'Extracting details' : data.title);
+    inside('[data-progress-workflow]').hidden = !processing && data.state !== 'failed';
+    const bar = inside('[data-progress-bar]');
+    bar.value = data.steps_completed;
+    setText('[data-progress-step-count]', data.steps_completed + ' of ' + data.steps.length + ' complete');
+    for (const step of data.steps) {
+      const row = inside('[data-progress-step="' + step.id + '"]');
+      const active = step.status === 'active';
+      row.dataset.stepStatus = step.status;
+      if (active) row.setAttribute('aria-current', 'step');
+      else row.removeAttribute('aria-current');
+      row.querySelector('[data-step-spinner]').hidden = !active;
+      row.querySelector('[data-step-marker]').hidden = active;
+      row.querySelector('[data-step-label]').textContent = step.status_label;
+    }
     setText('[data-progress-counts]', data.documents_ready + ' of ' + data.documents + ' documents processed · ' + data.fields + ' extracted fields · ' + data.reviews + ' remaining reviews');
     setText('[data-progress-updated]', data.updated_at ? 'Last stage update: ' + new Date(data.updated_at).toLocaleString() : processing ? "Waiting for the worker's first stage update." : 'Detailed stage times are unavailable for this job.');
     const list = inside('[data-progress-stages]');
@@ -899,13 +912,26 @@ document.addEventListener('keydown', event => {
 queryAll('.page-image img').forEach(image => {
   const unavailable = () => {
     image.hidden = true;
-    const page = image.closest('.page');
+    const page = image.closest('.source-preview');
     const message = page ? page.querySelector('[data-media-error]') : null;
     if (message) message.hidden = false;
     hideBoxes();
   };
+  const message = image.closest('.source-preview')?.querySelector('[data-media-error]');
+  image.addEventListener('load', () => {
+    image.hidden = false;
+    if (message) message.hidden = true;
+  });
   image.addEventListener('error', unavailable);
   if (image.complete && image.naturalWidth === 0) unavailable();
+  message?.querySelector('[data-retry-source]')?.addEventListener('click', () => {
+    const url = new URL(image.src, location.origin);
+    url.searchParams.set('retry', Date.now());
+    message.hidden = true;
+    image.hidden = false;
+    image.loading = 'eager';
+    image.src = url.href;
+  });
 });
 
 const initialWorkspace = query('[data-workspace]');

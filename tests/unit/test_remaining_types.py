@@ -4,10 +4,9 @@ from dataclasses import replace
 import pytest
 
 from tests.contract.test_document_schemas import payload, required_fields
-from tests.unit.test_extraction import fixture
+from tests.unit.test_extraction import MockProvider, fixture
 from trade_extract.domain.hashing import document_hash
 from trade_extract.domain.inference import ProviderResult
-from trade_extract.providers.mock import MockProvider
 from trade_extract.schemas.base import EnvelopeSource
 from trade_extract.schemas.registry import DOCUMENT_SCHEMAS
 from trade_extract.services.conflicts import detect_conflicts

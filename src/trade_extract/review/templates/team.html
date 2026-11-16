@@ -4,7 +4,7 @@
 <section class="card">
   <header class="card-header">
     <div><h2 class="card-title">Review team</h2><p class="card-subtitle">Accounts that can sign in to this console.</p></div>
-    <span class="badge badge-neutral">{{ members | length }} member{{ '' if members | length == 1 else 's' }}</span>
+    <span class="badge badge-neutral">{{ total }} member{{ '' if total == 1 else 's' }}</span>
   </header>
   <div class="table-wrap">
     <table class="table">
@@ -28,5 +28,7 @@
       </tbody>
     </table>
   </div>
+  {% set pagination_item = "member" %}
+  {% include "partials/pagination.html" %}
 </section>
 {% endblock %}

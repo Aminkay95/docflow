@@ -9,7 +9,7 @@ from tests.support import make_image
 from trade_extract.config import Settings
 from trade_extract.domain.inference import InferenceRequest, PageImage, ProviderError
 from trade_extract.providers import make_provider
-from trade_extract.providers.deepseek import DeepSeekProvider
+from trade_extract.providers.deepseek import DeepSeekProvider, LocalModelProvider
 from trade_extract.providers.prompts import prompt_hash
 
 
@@ -177,6 +177,64 @@ def test_live_provider_requires_explicit_recorder():
     with pytest.raises(ValueError, match="live_provider_requires_recorder"):
         make_provider(settings)
     assert make_provider(Settings(provider="mock")).name == "mock"
+
+
+def test_local_model_uses_llama_server_for_text_and_vision():
+    calls = []
+
+    def handler(req):
+        calls.append(req)
+        return httpx.Response(200, json={"choices": [{"message": {"content": "{}"}}]})
+
+    settings = Settings(
+        provider="local",
+        deepseek_api_key="",
+        provider_input_price_usd_per_million=100,
+        provider_output_price_usd_per_million=100,
+    )
+    attempts = []
+    provider = make_provider(settings, recorder=attempts.append)
+    assert isinstance(provider, LocalModelProvider)
+    provider.client = httpx.Client(transport=httpx.MockTransport(handler))
+    assert provider.text_reason(request()).model == settings.local_model_name
+    provider.vision_extract(replace(request(), pages=(PageImage(0, make_image(), 16, 16),)))
+
+    assert [attempt.reader for attempt in attempts] == ["text_layer", "vision"]
+    for call in calls:
+        assert str(call.url) == "http://127.0.0.1:8080/v1/chat/completions"
+        assert "Authorization" not in call.headers
+        body = json.loads(call.content)
+        assert body["chat_template_kwargs"] == {"enable_thinking": False}
+        assert "thinking" not in body
+    assert json.loads(calls[1].content)["messages"][1]["content"][-1]["type"] == "image_url"
+
+
+def test_local_totals_request_keeps_evidence_ids_and_omits_coordinates():
+    from trade_extract.services.readers.base import invoice_phase_schema
+
+    calls = []
+
+    def handler(req):
+        calls.append(json.loads(req.content))
+        return httpx.Response(200, json={"choices": [{"message": {"content": "{}"}}]})
+
+    provider = LocalModelProvider(
+        Settings(provider="local"),
+        client=httpx.Client(transport=httpx.MockTransport(handler)),
+        recorder=lambda attempt: None,
+    )
+    schema = invoice_phase_schema("commercial_invoice", "totals_tax")
+    evidence = (
+        "p0l0|p=0|b=0,0,1,1|Invoice header\n"
+        "p0l1|p=0|b=0,0,1,1|GBP\n"
+        "p0l2|p=0|b=0,0,1,1|Total amount due: 250.50\n"
+        "Independent rows: []"
+    )
+    provider.text_reason(replace(request(), evidence=evidence, schema_json=schema))
+    assert calls[0]["messages"][1]["content"][0]["text"] == (
+        "p0l1|GBP\np0l2|Total amount due: 250.50"
+    )
+    assert calls[0]["response_format"]["schema"] == schema["output"]
 
 
 def test_remote_protocol_errors_retry_and_record():

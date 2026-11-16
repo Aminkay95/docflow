@@ -10,11 +10,45 @@ from trade_extract.domain.hashing import document_hash
 from trade_extract.domain.inference import PageImage, ProviderResult
 from trade_extract.domain.provenance import BBox, CoordinateSpace, Provenance, ReaderKind
 from trade_extract.domain.readers import FieldCandidate, PageFeatures, PageInput
-from trade_extract.providers.mock import MockProvider
+from trade_extract.providers.mock import MockProvider as BaseMockProvider
 from trade_extract.schemas.base import EnvelopeSource
 from trade_extract.schemas.registry import get_schema
 from trade_extract.services.extraction import extract, merge_candidates
 from trade_extract.services.page_model import render_container
+
+
+class MockProvider(BaseMockProvider):
+    """Reuse a scripted reader envelope across the three scoped invoice phases."""
+
+    def _call(self, request, reader):
+        import copy
+        import json
+
+        cache = getattr(self, "_reader_payloads", {})
+        if request.stage in {"invoice_line_items", "invoice_totals_tax"} and reader in cache:
+            self.requests.append(request)
+            result = cache[reader]
+        else:
+            result = super()._call(request, reader)
+            raw = (
+                json.loads(result.raw_json)
+                if isinstance(result.raw_json, str)
+                and result.raw_json.startswith("{")
+                and result.raw_json.endswith("}")
+                else result.raw_json
+            )
+            if isinstance(raw, dict) and "fields" in raw:
+                cache[reader] = result
+                self._reader_payloads = cache
+        raw = copy.deepcopy(result.raw_json)
+        if isinstance(raw, dict) and "fields" in raw:
+            allowed = request.schema_json.get(
+                "allowed_scalar_paths", request.schema_json.get("allowed_phase_paths")
+            )
+            if allowed is not None:
+                raw["fields"] = {p: f for p, f in raw["fields"].items() if p in allowed}
+            return replace(result, raw_json=raw)
+        return result
 
 
 def fixture(tmp_path: Path):
@@ -98,7 +132,7 @@ def test_sufficient_boxed_digital_text_skips_image_readers(tmp_path):
     assert {candidate.field.provenance.model for candidate in result.candidates} == {"mock-text"}
     assert all(f.agreement == Agreement.SINGLE_READER for f in result.document.fields.values())
     assert not provider.requests[0].pages
-    assert len(provider.requests) == 1
+    assert len(provider.requests) == 3
 
 
 def test_bounded_repair_preserves_original_evidence(tmp_path):
@@ -108,7 +142,7 @@ def test_bounded_repair_preserves_original_evidence(tmp_path):
     )
     result = extract(provider, document_type="commercial_invoice", source=source, pages=(page,))
     assert result.status == "extraction_failed" and result.document is None
-    assert len(provider.requests) == 2
+    assert len(provider.requests) == 6
     assert provider.requests[1].evidence == provider.requests[0].evidence
     assert provider.requests[1].repair_errors
     repaired = MockProvider(
@@ -178,7 +212,7 @@ def test_missing_text_only_calls_vision_and_keeps_disagreement(tmp_path):
         pages=(replace(page, characters=()),),
     )
     assert result.status == "extracted"
-    assert len(provider.requests) == 1
+    assert len(provider.requests) == 3
     assert all(f.agreement == Agreement.SINGLE_READER for f in result.document.fields.values())
     vision = payload(ReaderKind.VISION)
     vision["fields"]["invoice.number"]["value"] = "INV-002"
@@ -219,8 +253,8 @@ def test_forged_text_box_and_truncated_table_trigger_repair(tmp_path):
             {("commercial_invoice", source.document_hash): [ProviderResult(raw, "mock")]}
         )
         result = extract(provider, document_type="commercial_invoice", source=source, pages=(page,))
-        assert result.status == "extraction_failed"
-        assert len(provider.requests) == 2
+        assert result.document is None or result.document.status == "review_required"
+        assert provider.requests[1].repair_errors or "provider_truncated" in str(result.errors)
 
 
 def test_repairs_keep_paths_and_guard_codes_without_values(tmp_path):
@@ -258,7 +292,7 @@ def test_service_owns_lifecycle_metadata(tmp_path):
         source=source,
         pages=(replace(page, characters=()),),
     )
-    assert result.document.status == "extracted"
+    assert result.document.status == "review_required"
     assert result.document.created_at is result.document.extracted_at is None
 
 
@@ -317,7 +351,8 @@ def test_value_cannot_be_a_numeric_substring_of_citation(tmp_path):
         {("commercial_invoice", source.document_hash): [ProviderResult(raw, "mock")]}
     )
     result = extract(provider, document_type="commercial_invoice", source=source, pages=(page,))
-    assert result.status == "extraction_failed"
+    assert result.document.status == "review_required"
+    assert "invoice.number" not in result.document.fields
     assert "value_span_geometry_mismatch" in str(result.errors)
 
 

@@ -1,0 +1,29 @@
+{% from "partials/icon.html" import icon %}
+{% from "partials/review_value.html" import review_value %}
+<section class="invoice-items" aria-label="{{ panel.label }}">
+  {% if panel.incomplete %}<div class="notice notice-warning">{{ icon('circle-alert', 16) }}<p>{% if key == 'items' %}Some line items may be missing.{% else %}Some rows may be missing.{% endif %} Compare the extracted rows with the source document.</p></div>{% endif %}
+  {% if panel.rows %}
+  <div class="table-wrap line-items-scroll" tabindex="0" role="region" aria-label="{{ panel.label }}">
+    <table class="line-items-table">
+      <caption class="sr-only">{{ panel.label }}. Select a cell to view its evidence or edit its value.</caption>
+      <thead><tr><th scope="col">#</th>{% for column in panel.columns %}<th scope="col">{{ column.label }}</th>{% endfor %}</tr></thead>
+      <tbody>
+      {% for row in panel.rows %}
+        <tr><th scope="row" class="row-index">{{ row.index + 1 }}</th>
+        {% for column in panel.columns %}
+        {% set cell = row.cells.get(column.key) %}
+        <td>
+          {% if cell %}
+          <div class="line-item-cell" tabindex="0" data-page="{{ cell.field.provenance.page_index }}" data-box='{{ boxes.get(cell.path) | tojson }}'>
+          {{ review_value(cell.path, cell.field, ('Line item ' if key == 'items' else panel.label ~ ' row ') ~ (row.index + 1) ~ ' ' ~ column.label, 'table-' ~ key ~ '-' ~ row.index ~ '-' ~ column.key, document, item, reviewed, read_only, compact=true) }}
+          </div>
+          {% else %}<span class="text-muted missing-cell">Not extracted</span>{% endif %}
+        </td>
+        {% endfor %}
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}<p class="text-muted">{% if processing %}{{ panel.label }} are still being extracted.{% else %}No rows were extracted.{% endif %}</p>{% endif %}
+</section>

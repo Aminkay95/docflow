@@ -42,12 +42,15 @@
     </header>
     <div class="card-body source-pages">
       {% for page in range(document.source.page_start, document.source.page_end + 1) %}
-      <figure class="page" id="page-{{ page }}">
+      <figure class="source-preview" id="page-{{ page }}">
         <div class="page-image">
           <img loading="lazy" alt="Conditioned source page {{ page + 1 }}" src="/review/media/documents/{{ document.document_id }}/pages/{{ page }}">
           <div class="bbox" hidden></div>
         </div>
-        <p class="media-error" data-media-error hidden>{{ icon('image-off', 16) }} Source image unavailable or expired. Values and review actions remain available.</p>
+        <div class="media-error" data-media-error hidden>
+          {{ icon('image-off', 16) }} <span>Source preview could not load.</span>
+          <button type="button" class="btn btn-secondary btn-sm" data-retry-source>Retry preview</button>
+        </div>
         <figcaption class="page-caption">Page {{ page + 1 }}</figcaption>
       </figure>
       {% endfor %}
@@ -62,7 +65,7 @@
       </header>
       <div class="card-body field-list">
         {% set reviewed = labels | map(attribute='field_path') | list %}
-        {% for path, field in display_fields.items() %}
+        {% for path, field in scalar_fields.items() %}
         <article class="field-card" tabindex="0" data-page="{{ field.provenance.page_index }}" data-box='{{ boxes.get(path) | tojson }}'>
           <div class="field-head">
             <p class="mono field-path">{{ path }}</p>
@@ -102,12 +105,21 @@
         {% else %}
         <div class="empty compact">
           <span class="empty-icon">{{ icon('file-search', 18) }}</span>
-          <p class="empty-title">No fields were emitted</p>
-          <p class="empty-copy">Review the retained failure or unreadable outcome below.</p>
+          <p class="empty-title">{{ "No standalone fields" if table_panels else "No fields were emitted" }}</p>
+          {% if not table_panels %}<p class="empty-copy">Review the retained failure or unreadable outcome below.</p>{% endif %}
         </div>
         {% endfor %}
       </div>
     </div>
+
+    {% for key, panel in table_panels.items() %}
+    <div class="card">
+      <header class="card-header"><h2 class="card-title">{{ panel.label }}</h2></header>
+      <div class="card-body line-items-panel">
+        {% include "partials/extraction_table.html" %}
+      </div>
+    </div>
+    {% endfor %}
 
     {% if item and not read_only and (document.status == 'unreadable' or not display_fields) %}
     <div class="card">

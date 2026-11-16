@@ -21,6 +21,7 @@ def build_policy_config(settings: Settings) -> dict[str, object]:
 
     return GatePolicy(invoice_pass_enabled=True, review_depth="checks").model_dump(mode="json")
 
+
 def main() -> int:
     settings = get_settings()
     engine = make_engine(settings)

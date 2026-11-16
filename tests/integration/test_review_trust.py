@@ -606,11 +606,14 @@ def test_review_queue_can_reach_items_after_the_first_hundred(api, tmp_path, mon
         session.commit()
     login(api)
     page = api.client.get("/review/queues/conflicts")
-    assert "queue-entry099" in page.text and "queue-entry100" not in page.text
-    next_cursor = re.search(r'href="/review/queues/conflicts\?cursor=([^"]+)"', page.text)[1]
-    last = api.client.get("/review/queues/conflicts", params={"cursor": next_cursor})
+    assert "queue-entry024" in page.text and "queue-entry025" not in page.text
+    assert 'rel="next" href="/review/queues/conflicts?page=2"' in page.text
+    last = api.client.get("/review/queues/conflicts", params={"page": 999})
     assert "queue-entry100" in last.text
-    assert "Next page" not in last.text
+    assert 'rel="prev" href="/review/queues/conflicts?page=4"' in last.text
+    assert 'rel="next"' not in last.text
+    legacy = api.client.get("/review/queues/conflicts/rows", params={"cursor": "rev_queue099"})
+    assert "queue-entry100" in legacy.text
 
 
 def test_resolution_does_not_overwrite_a_concurrent_failed_job(api, tmp_path, monkeypatch):
@@ -671,8 +674,8 @@ def test_internal_upload_creates_job_and_shows_extracted_values(api, tmp_path, m
     assert accepted["submitted_documents"] == 1
     pending = api.client.get(accepted["job_url"])
     assert pending.status_code == 200
-    assert 'data-job-progress=' in pending.text
-    assert 'data-autorefresh=' not in pending.text
+    assert "data-job-progress=" in pending.text
+    assert "data-autorefresh=" not in pending.text
     drain(api)
 
     page = api.client.get(accepted["job_url"])

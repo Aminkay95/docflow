@@ -27,15 +27,21 @@ from trade_extract.domain.clock import Clock
 from trade_extract.domain.hashing import document_hash, document_idempotency_key
 from trade_extract.domain.ids import new_id
 from trade_extract.services.conditioning import condition_page, diagnostics
+from trade_extract.services.digital_bill_of_lading import read_manifest
 from trade_extract.services.page_model import IMAGE_CONTENT_TYPE, render_container
 from trade_extract.services.progress import report
-from trade_extract.services.segmentation import SegmentSpec, segment_pages
+from trade_extract.services.segmentation import (
+    SegmentSpec,
+    has_clear_segment_heading,
+    segment_pages,
+)
 from trade_extract.services.storage import (
     ObjectStorage,
     build_storage,
     page_image_key,
     page_thumbnail_key,
 )
+from trade_extract.workers.handlers.extract_segment import rehydrate
 
 
 @dataclass(frozen=True)
@@ -188,8 +194,9 @@ def handle(
 
     report(session, "identifying")
     try:
+        page_texts = [page.text for page in stored_pages]
         specs = segment_pages(
-            [page.text for page in stored_pages],
+            page_texts,
             min_confidence=settings.segmentation_min_confidence,
         )
     except Exception as exc:  # noqa: BLE001 - deterministic segmentation guard
@@ -276,7 +283,26 @@ def handle(
         session.flush()
         from trade_extract.schemas.registry import DOCUMENT_SCHEMAS
 
-        if settings.llm_classification_enabled:
+        segment_texts = page_texts[spec.page_start : spec.page_end + 1]
+        local_manifest = (
+            settings.provider == "local"
+            and settings.local_classification_fast_path
+            and not settings.llm_extraction_priority
+            and spec.document_type == "bill_of_lading"
+            and spec.page_start == spec.page_end
+            and read_manifest(
+                rehydrate(vars(stored_pages[spec.page_start]), None),
+                f"sha256:{file_row.sha256}",
+                settings.ocr_max_rows,
+            )
+            is not None
+        )
+        use_local_route = settings.local_classification_fast_path and (
+            (spec.document_type in DOCUMENT_SCHEMAS and has_clear_segment_heading(spec, page_texts))
+            or local_manifest
+            or (settings.provider != "mock" and not any(text.strip() for text in segment_texts))
+        )
+        if settings.llm_classification_enabled and not use_local_route:
             tasks_repo.enqueue(
                 session,
                 job_id=file_row.job_id,
@@ -288,7 +314,7 @@ def handle(
                 dedupe_key=f"classify_segment:{document.id}",
             )
         elif spec.document_type in DOCUMENT_SCHEMAS or (
-            spec.document_type == "unknown" and settings.provider == "deepseek"
+            spec.document_type == "unknown" and settings.provider != "mock"
         ):
             tasks_repo.enqueue(
                 session,

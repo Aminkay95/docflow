@@ -12,8 +12,34 @@ from trade_extract.domain.provenance import BBox, ReaderKind
 from trade_extract.domain.readers import OCREvidence, OCRSpan, PageFeatures, TableRegion, TableRow
 from trade_extract.providers.mock import MockProvider
 from trade_extract.schemas.registry import get_schema
-from trade_extract.services.extraction import extract
+from trade_extract.services.extraction import extract as original_extract
 from trade_extract.services.readers.paddle import PaddleReader
+
+
+def scoped_result(result, request):
+    """Existing full-envelope fixtures explicitly honor the current phase contract."""
+    from copy import deepcopy
+
+    raw = deepcopy(result.raw_json)
+    allowed = request.schema_json.get(
+        "allowed_scalar_paths", request.schema_json.get("allowed_phase_paths")
+    )
+    if allowed is not None and isinstance(raw, dict) and isinstance(raw.get("fields"), dict):
+        raw["fields"] = {p: f for p, f in raw["fields"].items() if p in allowed}
+    return replace(result, raw_json=raw)
+
+
+def extract(provider, **kwargs):
+    class ScopedProvider:
+        name = getattr(provider, "name", "scripted")
+
+        def vision_extract(self, request):
+            return scoped_result(provider.vision_extract(request), request)
+
+        def text_reason(self, request):
+            return scoped_result(provider.text_reason(request), request)
+
+    return original_extract(ScopedProvider(), **kwargs)
 
 
 class StaticReader:
@@ -22,7 +48,7 @@ class StaticReader:
 
     def read(self, provider, request, pages):
         self.seen.append(tuple(p.page_index for p in pages))
-        return ProviderResult(self.payload, "injected") if pages else None
+        return scoped_result(ProviderResult(self.payload, "injected"), request) if pages else None
 
 
 def with_rows(payload, count, page_index=0, offset=0, total=None):
@@ -85,9 +111,11 @@ def test_paddle_citations_are_guarded_at_extract_boundary(tmp_path, bad):
         readers=(StaticReader(ReaderKind.PADDLE, raw),),
         max_repairs=0,
     )
-    assert result.status == ("extraction_failed" if bad else "extracted"), result.errors
+    assert result.status == "extracted", result.errors
+    assert result.document.status == "review_required"
     if bad:
-        assert "ocr_span_geometry_mismatch" in result.errors[0]
+        assert "invoice.number" not in result.document.fields
+        assert any("ocr_span_geometry_mismatch" in e for e in result.errors)
 
 
 def test_schema_valid_shorter_200_row_table_cannot_pass(tmp_path):
@@ -140,9 +168,9 @@ def test_schema_valid_shorter_200_row_table_cannot_pass(tmp_path):
         readers=(reader, PaddleReader()),
         max_repairs=0,
     )
-    assert result.status == "extraction_failed"
-    missing = next(e for e in result.errors if "unresolved_rows:" in e)
-    assert missing.endswith(",".join(map(str, range(99, 200))))
+    assert result.document.status == "review_required"
+    assert result.document.tables["line_items"].unresolved_rows == list(range(99, 200))
+    assert "invoice_unresolved_line_items" in result.errors
     assert len(result.inventory.rows) == 200
 
 
@@ -174,7 +202,7 @@ def test_good_digital_page_routes_only_text(tmp_path):
         settings=Settings(routing_min_text_characters=1),
     )
     assert result.status == "extracted"
-    assert text.seen == [(0,)] and not vision.seen
+    assert text.seen == [(0,)] * 3 and not vision.seen
 
 
 @pytest.mark.parametrize("damage", ["value", "raw_text", "bbox"])
@@ -198,8 +226,9 @@ def test_paddle_rejects_each_unsupported_citation_part(tmp_path, damage):
         readers=(StaticReader(ReaderKind.PADDLE, raw),),
         max_repairs=0,
     )
-    assert result.status == "extraction_failed"
-    assert "ocr_span_geometry_mismatch" in result.errors[0]
+    assert result.document.status == "review_required"
+    assert "invoice.number" not in result.document.fields
+    assert any("ocr_span_geometry_mismatch" in e for e in result.errors)
 
 
 @pytest.mark.parametrize("row_count", [25, 200])
@@ -278,7 +307,8 @@ def test_native_batches_reconstruct_all_rows_from_anonymous_v3_structure(tmp_pat
     assert result.status == "extracted", result.errors
     assert result.document.tables["line_items"].row_count_extracted == row_count
     assert len(result.inventory.rows) == row_count
-    assert len(provider.requests) == 1 + (row_count + 6) // 7
+    assert len(provider.requests) == 5 + (row_count + 5) // 6
+    assert result.document.status == "extracted"
 
 
 @pytest.mark.parametrize("bad", ["shape", "identity", "field_shape"])
@@ -323,8 +353,10 @@ def test_malformed_later_native_batch_enters_bounded_failure(tmp_path, bad):
         settings=Settings(provider_max_images=2),
         max_repairs=0,
     )
-    assert result.status == "extraction_failed"
-    assert provider.calls == 2
+    assert result.document.status == "review_required"
+    assert result.document.fields["invoice.number"].value == "INV-001"
+    assert not any(p.startswith("line_items[") for p in result.document.fields)
+    assert provider.calls == 4
     assert result.routes
 
 
@@ -448,6 +480,8 @@ def test_native_pixels_reach_provider_with_original_dimensions(tmp_path):
     class Provider:
         def vision_extract(self, request):
             meta = json.loads(request.evidence.split("Attached images: ")[1])
+            if request.stage != "invoice_line_items":
+                return ProviderResult(payload(ReaderKind.VISION), "pixels-header")
             assert meta[1]["crop_rectangle"] == list(rect)
             with Image.open(io.BytesIO(request.pages[1].image_bytes)) as crop:
                 assert crop.size == (rect[2] - rect[0], rect[3] - rect[1])
@@ -563,6 +597,8 @@ def test_late_named_table_uses_native_second_pass_and_effective_ocr_limits(
 
         def vision_extract(self, request):
             metadata = json.loads(request.evidence.split("Attached images: ")[1])
+            if request.stage != "invoice_line_items":
+                return ProviderResult(payload(ReaderKind.VISION), "native-header")
             assert len(metadata) == 2
             self.native_calls += 1
             raw = with_rows(payload(ReaderKind.VISION), 1)
@@ -587,8 +623,8 @@ def test_late_named_table_uses_native_second_pass_and_effective_ocr_limits(
     )
     assert result.status == "extracted", result.errors
     if exhaust_recursive:
-        assert provider.text_calls == 2
-        assert provider.native_calls == 0
+        assert provider.text_calls == 6
+        assert provider.native_calls == 1
         assert result.document.status == "review_required"
         assert "provider_call_budget_exhausted" in result.errors
         assert "partial_evidence_retained" in result.diagnostics
@@ -639,7 +675,7 @@ def test_late_inspection_failure_retains_its_reason(tmp_path):
         readers=(StaticReader(ReaderKind.TEXT_LAYER, raw), PaddleReader(backend=fail)),
         max_repairs=0,
     )
-    assert result.status == "extraction_failed"
+    assert result.document.status == "review_required"
     assert "page:0:ocr_initialization_or_inference_failed" in result.diagnostics
     assert "private document text" not in str(result.errors)
 
@@ -684,7 +720,7 @@ def test_mixed_routes_and_repairs_never_receive_refused_or_ineligible_pages(tmp_
             raw["source"] = source.model_dump()
             for f in raw["fields"].values():
                 f["provenance"].update(page_index=self.index, document_hash=source.document_hash)
-            return ProviderResult(raw, "repaired")
+            return scoped_result(ProviderResult(raw, "repaired"), request)
 
     text, vision = Reader(ReaderKind.TEXT_LAYER, 0), Reader(ReaderKind.VISION, 1)
     result = extract(
@@ -696,12 +732,12 @@ def test_mixed_routes_and_repairs_never_receive_refused_or_ineligible_pages(tmp_
         settings=Settings(routing_min_text_characters=1),
     )
     assert result.status == "unreadable" and result.errors == ("page:2:blurred",)
-    assert len(text.requests) == len(vision.requests) == 2
+    assert len(text.requests) == len(vision.requests) == 4
     assert text.requests[1].repair_errors and vision.requests[1].repair_errors
     assert next(r for r in result.routes if r.page_index == 2).readers == ()
 
 
-def test_non_table_digital_companion_does_not_require_ocr_structure(tmp_path):
+def test_digital_companion_requires_honest_invoice_row_inspection(tmp_path):
     from trade_extract.domain.hashing import document_hash
 
     source, p, payload = fixture(tmp_path)
@@ -747,7 +783,8 @@ def test_non_table_digital_companion_does_not_require_ocr_structure(tmp_path):
         max_repairs=0,
     )
     assert result.status == "extracted", result.errors
-    assert result.inventory.diagnostics == ()
+    assert result.document.status == "review_required"
+    assert result.inventory.diagnostics == ("page:0:independent_structure_unavailable",)
 
 
 def test_failed_structure_cannot_disappear_when_provider_omits_table(tmp_path):
@@ -764,7 +801,7 @@ def test_failed_structure_cannot_disappear_when_provider_omits_table(tmp_path):
         readers=(StaticReader(ReaderKind.VISION, payload(ReaderKind.VISION)),),
         max_repairs=0,
     )
-    assert result.status == "extraction_failed"
+    assert result.document.status == "review_required"
     assert "page:0:independent_structure_unavailable" in result.errors
 
 
@@ -787,6 +824,5 @@ def test_reader_count_disagreement_is_not_silently_resolved(tmp_path):
         readers=(StaticReader(ReaderKind.VISION, a), StaticReader(ReaderKind.VISION, b)),
         max_repairs=0,
     )
-    assert result.status == "extraction_failed" and result.errors == (
-        "table_metadata_disagreement",
-    )
+    assert result.document.status == "review_required"
+    assert "table_metadata_disagreement" in result.errors

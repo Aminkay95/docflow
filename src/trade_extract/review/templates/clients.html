@@ -4,7 +4,7 @@
 <section class="card">
   <header class="card-header">
     <div><h2 class="card-title">Clients</h2><p class="card-subtitle">Tenants with API credentials for document submission.</p></div>
-    <span class="badge badge-neutral">{{ rows | length }} client{{ '' if rows | length == 1 else 's' }}</span>
+    <span class="badge badge-neutral">{{ total }} client{{ '' if total == 1 else 's' }}</span>
   </header>
   {% if rows %}
   <div class="table-wrap">
@@ -36,5 +36,7 @@
     <p class="empty-copy">Create a client with the CLI to start accepting submissions.</p>
   </div>
   {% endif %}
+  {% set pagination_item = "client" %}
+  {% include "partials/pagination.html" %}
 </section>
 {% endblock %}

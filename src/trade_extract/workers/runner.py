@@ -22,6 +22,7 @@ from trade_extract.workers.handlers import (
     classify_segment,
     extract_segment,
     finalize_submission,
+    import_email,
     prepare_file,
 )
 
@@ -34,10 +35,11 @@ HANDLERS: dict[str, Handler] = {
     "classify_segment": classify_segment.handle,
     "extract_segment": extract_segment.handle,
     "finalize_submission": finalize_submission.handle,
+    "import_email": import_email.handle,
 }
 
-DEFAULT_KINDS = ["prepare_file", "extract_segment", "finalize_submission"]
-PIPELINE_KINDS = ["prepare_file", "classify_segment", "extract_segment", "finalize_submission"]
+DEFAULT_KINDS = ["prepare_file", "extract_segment", "finalize_submission", "import_email"]
+PIPELINE_KINDS = [*DEFAULT_KINDS, "classify_segment"]
 
 
 def default_worker_id() -> str:

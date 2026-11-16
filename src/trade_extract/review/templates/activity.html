@@ -9,7 +9,7 @@
 
 <section class="card">
   <header class="card-header">
-    <div><h2 class="card-title">Decision log</h2><p class="card-subtitle">The 100 most recent review decisions.</p></div>
+    <div><h2 class="card-title">Decision log</h2><p class="card-subtitle">Review decisions, newest first.</p></div>
   </header>
   {% if rows %}
   <ul class="timeline">
@@ -39,5 +39,7 @@
     <p class="empty-copy">Resolved review items will be logged here.</p>
   </div>
   {% endif %}
+  {% set pagination_item = "decision" %}
+  {% include "partials/pagination.html" %}
 </section>
 {% endblock %}

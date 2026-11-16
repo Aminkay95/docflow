@@ -11,6 +11,63 @@ from trade_extract.db.models.task import JobTask
 from trade_extract.db.repositories.evidence import review_counts
 from trade_extract.services.progress import KINDS, STAGES
 
+_STEPS = (
+    ("prepare", "Prepare documents", ("preparing",)),
+    ("classify", "Classify documents", ("identifying",)),
+    ("extract", "Extract details", ("reading", "extracting")),
+    ("validate", "Check and finalize results", ("validating", "finalizing")),
+)
+_STEP_BY_STAGE = {stage: index for index, (_, _, stages) in enumerate(_STEPS) for stage in stages}
+_STEP_STATUS_LABELS = {
+    "pending": "Pending",
+    "waiting": "Waiting",
+    "active": "In progress",
+    "complete": "Complete",
+    "stopped": "Stopped",
+}
+
+
+def _step_progress(state, current, active, stopped, observed):
+    active_stage = None
+    if state == "processing":
+        active_steps = [
+            _STEP_BY_STAGE.get(_metadata(task).get("stage") or KINDS[task.kind], 0)
+            for task in active
+        ]
+        completed = min(active_steps, default=0)
+        if current is not None:
+            current_stage = _metadata(current).get("stage") or KINDS[current.kind]
+            active_stage = _STEP_BY_STAGE.get(current_stage)
+    elif state == "failed":
+        failed_steps = [_STEP_BY_STAGE[stage] for stage in stopped]
+        completed = min(
+            failed_steps, default=max((_STEP_BY_STAGE[stage] for stage in observed), default=0)
+        )
+    else:
+        completed = len(_STEPS)
+
+    steps = []
+    for index, (key, label, _) in enumerate(_STEPS):
+        if index < completed:
+            status = "complete"
+        elif state == "failed" and index == completed:
+            status = "stopped"
+        elif index == active_stage and current.status == "running":
+            status = "active"
+        elif index == completed:
+            status = "waiting"
+        else:
+            status = "pending"
+        steps.append(
+            {
+                "id": key,
+                "label": label,
+                "status": status,
+                "status_label": _STEP_STATUS_LABELS[status],
+            }
+        )
+    return steps, completed
+
 
 def _metadata(task):
     metadata = (task.payload or {}).get("progress", {})
@@ -184,8 +241,11 @@ def project(session, job):
             ],
         ]
     )
+    steps, steps_completed = _step_progress(state, current, active, stopped, observed)
     return {
         "state": state,
+        "steps": steps,
+        "steps_completed": steps_completed,
         "processing": processing,
         "title": title,
         "started_at": started_at.isoformat(),

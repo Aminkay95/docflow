@@ -8,6 +8,7 @@ from trade_extract.services.segmentation import (
     UNKNOWN,
     SegmentSpec,
     classify_page,
+    has_clear_segment_heading,
     layout_fingerprint,
     segment_pages,
     validate_coverage,
@@ -23,6 +24,20 @@ SAMPLES = {
     "verification_memo": "VERIFICATION MEMO\nSeal intact",
     "packing_list": "PACKING LIST\nGross weight: 18,450.00",
 }
+
+
+@pytest.mark.parametrize(
+    ("pages", "expected"),
+    [
+        (["COMMERCIAL INVOICE\nInvoice No: 123"], True),
+        (["Amount due: 100\nBill to: Buyer"], False),
+        (["COMMERCIAL INVOICE\nDELIVERY ORDER"], False),
+        (["COMMERCIAL INVOICE", ""], False),
+        ([""], False),
+    ],
+)
+def test_clear_segment_heading_requires_explicit_unambiguous_evidence(pages, expected):
+    assert has_clear_segment_heading(segment_pages(pages)[0], pages) is expected
 
 
 @pytest.mark.parametrize("document_type", RECOGNISED_TYPES)
@@ -65,6 +80,21 @@ def test_no_text_is_unknown() -> None:
     result = classify_page("   \n\n")
     assert result.document_type == UNKNOWN
     assert result.confidence == 0.0
+
+
+def test_bill_of_lading_without_embedded_heading() -> None:
+    text = (
+        "HAD/2/64772C CY-CY\n"
+        "Gross weight: 218042\nNet weight: 205942\n"
+        "IRSU2018865 401033080 110 Drum(s)\n"
+        "BITUMEN GRADE 80/100\nHS CODE: 27132000\nSHIPPER'S LOAD"
+    )
+    assert classify_page(text).document_type == "bill_of_lading"
+
+
+def test_weights_without_a_packing_label_are_unknown() -> None:
+    result = classify_page("Gross weight: 218042\nNet weight: 205942")
+    assert result.document_type == UNKNOWN
 
 
 def test_confidence_is_always_bounded() -> None:

@@ -6,7 +6,7 @@ import re
 from collections.abc import Iterable
 from dataclasses import dataclass
 
-from trade_extract.domain.fields import Agreement, Field
+from trade_extract.domain.fields import Agreement, Field, ValueType
 from trade_extract.domain.provenance import BBox, CoordinateSpace, Provenance, ReaderKind
 from trade_extract.domain.readers import FieldCandidate, PageInput, TextCharacter
 from trade_extract.schemas.registry import SchemaSpec
@@ -69,6 +69,28 @@ _RULES: dict[str, tuple[tuple[str, str], ...]] = {
             r"(?:[A-Z]{3}\s*)?([0-9][0-9, .]*\d)",
         ),
     ),
+    "delivery_order": (
+        (
+            "release.place_of_delivery",
+            r"\bplace\s+of\s+delivery\s*:\s*(.+)$",
+        ),
+        (
+            "bill_of_lading.number",
+            r"^(?:m\s*/?\s*b\s*/?\s*l|master\s+bill\s+of\s+lading|b\s*/?\s*l|"
+            r"bill\s+of\s+lading)\s*(?:no\.?|number|#)\s*[:\-]?\s*"
+            r"([A-Z0-9][A-Z0-9./_-]{2,})",
+        ),
+        (
+            "delivery_order.issue_date",
+            r"^(?:to\b.*?\s+)?(?:delivery\s+order\s+date|d/o\s+date|issue\s+date|date)"
+            r"\s*:\s*(\d{1,2}[- ][A-Z]{3,9}[- ]\d{2,4}|\d{4}[-/]\d{1,2}[-/]\d{1,2}|"
+            r"\d{1,2}[-/]\d{1,2}[-/]\d{2,4})\s*$",
+        ),
+        (
+            "consignee.name",
+            r"^consignee(?:\s+name)?\s*:\s*(.+?)(?=\s+place\s+of\s+delivery\s*:|$)",
+        ),
+    ),
     "proforma_invoice": (
         (
             "invoice.number",
@@ -83,7 +105,9 @@ _RULES: dict[str, tuple[tuple[str, str], ...]] = {
 }
 
 
-def evidence_lines(pages: tuple[PageInput, ...]) -> tuple[EvidenceLine, ...]:
+def evidence_lines(
+    pages: tuple[PageInput, ...], *, preserve_text_order: bool = False
+) -> tuple[EvidenceLine, ...]:
     """Build compact, stable line evidence without importing image/OCR libraries."""
     output: list[EvidenceLine] = []
     for page in pages:
@@ -96,6 +120,11 @@ def evidence_lines(pages: tuple[PageInput, ...]) -> tuple[EvidenceLine, ...]:
                 if char.text in {"\n", "\r"}:
                     if groups and groups[-1]:
                         groups.append([])
+                    continue
+                if preserve_text_order:
+                    if not groups:
+                        groups.append([])
+                    groups[-1].append(char)
                     continue
                 center = (char.bbox.y0 + char.bbox.y1) / 2
                 group = next(
@@ -115,7 +144,8 @@ def evidence_lines(pages: tuple[PageInput, ...]) -> tuple[EvidenceLine, ...]:
             for row in groups:
                 if not row:
                     continue
-                row.sort(key=lambda char: (char.bbox.x0, char.bbox.y0))
+                if not preserve_text_order:
+                    row.sort(key=lambda char: (char.bbox.x0, char.bbox.y0))
                 text = "".join(char.text for char in row).strip()
                 if not text:
                     continue
@@ -144,6 +174,192 @@ def evidence_lines(pages: tuple[PageInput, ...]) -> tuple[EvidenceLine, ...]:
                     )
                     page_line_count += 1
     return tuple(output)
+
+
+_DELIVERY_REFERENCE_LABEL = re.compile(
+    r"(?P<delivery>\b(?:delivery\s+order|d\s*[./]?\s*o\.?)\s*"
+    r"(?:no\.?|number\b|#))"
+    r"|\b(?:(?:house|master)\s+)?(?:bill\s+of\s+lading|[hm]?b\s*/?\s*l)\s*"
+    r"(?:no\.?|number\b|#)",
+    re.IGNORECASE,
+)
+
+
+def delivery_number_matches_label(field: Field, lines: tuple[EvidenceLine, ...]) -> bool:
+    """Associate a proposed D/O number with a label in its visual column."""
+    provenance = field.provenance
+    value_box = provenance.bbox
+    nearby: list[tuple[float, bool]] = []
+    saw_label = False
+    for line in lines:
+        if line.page_index != provenance.page_index:
+            continue
+        text = "".join(char.text for char in line.characters) if line.characters else line.text
+        labels = list(_DELIVERY_REFERENCE_LABEL.finditer(text))
+        for index, label in enumerate(labels):
+            is_delivery = label.group("delivery") is not None
+            saw_label = True
+            box = line.box_for(*label.span()) or line.bbox
+            if box == value_box:
+                end = labels[index + 1].start() if index + 1 < len(labels) else len(text)
+                tail = text[label.end() : end]
+                if re.search(r"(?<!\w)" + re.escape(field.value) + r"(?!\w)", tail, re.I):
+                    nearby.append((0.0, is_delivery))
+                continue
+            same_row = abs((box.y0 + box.y1) - (value_box.y0 + value_box.y1)) <= (
+                max(box.height, value_box.height)
+            )
+            if same_row and 0 <= value_box.x0 - box.x1 <= 0.25:
+                nearby.append((value_box.x0 - box.x1, is_delivery))
+                continue
+            below_label = 0 <= value_box.y0 - box.y1 <= 0.025
+            same_column = box.x0 - 0.01 <= value_box.x0 <= box.x1 + 0.02
+            if below_label and same_column:
+                nearby.append((0.26 + value_box.y0 - box.y1, is_delivery))
+    if not nearby:
+        return not saw_label
+    distance = min(distance for distance, _ in nearby)
+    return all(is_delivery for gap, is_delivery in nearby if gap == distance)
+
+
+_DELIVERY_VOLUME = re.compile(r"\bvolume\b", re.IGNORECASE)
+_DELIVERY_GROSS_WEIGHT = re.compile(
+    r"\b(?:g\s*\.\s*weight|gross\s+weight)\b(?:\s*\(?\s*(?P<kg>kg)\b\)?)?",
+    re.IGNORECASE,
+)
+_DELIVERY_NET_WEIGHT = re.compile(
+    r"\b(?:n\s*\.\s*weight|net\s+weight)\b(?:\s*\(?\s*(?P<kg>kg)\b\)?)?",
+    re.IGNORECASE,
+)
+_PRINTED_NUMBER = re.compile(r"(?<![\w.,])\d[\d,.]*\d(?![\w.,])|(?<![\w.,])\d(?![\w.,])")
+
+
+def reconcile_delivery_measurements(
+    fields: dict[str, Field], lines: tuple[EvidenceLine, ...]
+) -> None:
+    """When both headings are visible, ground weights and volumes in their own columns."""
+    headings: dict[int, list[dict[str, BBox]]] = {}
+    for line in lines:
+        volume = _DELIVERY_VOLUME.search(line.text)
+        gross = _DELIVERY_GROSS_WEIGHT.search(line.text)
+        if volume and gross:
+            volume_box = line.box_for(*volume.span())
+            gross_box = line.box_for(*gross.span())
+            if volume_box and gross_box:
+                columns = {
+                    "volume": volume_box,
+                    "gross_weight_kg" if gross.group("kg") else "gross_weight": gross_box,
+                }
+                net = _DELIVERY_NET_WEIGHT.search(line.text)
+                if net and (net_box := line.box_for(*net.span())):
+                    columns["net_weight_kg" if net.group("kg") else "net_weight"] = net_box
+                headings.setdefault(line.page_index, []).append(columns)
+    for path, container in tuple(fields.items()):
+        if not re.fullmatch(r"containers\[\d+\]\.number", path):
+            continue
+        provenance = container.provenance
+        if provenance.reader != ReaderKind.TEXT_LAYER:
+            continue
+        row_box = provenance.bbox
+        headers = [
+            header
+            for header in headings.get(provenance.page_index, ())
+            if max(box.y1 for box in header.values()) < row_box.y0
+        ]
+        if not headers:
+            continue
+        columns = max(headers, key=lambda header: header["volume"].y0)
+        prefix = path.removesuffix(".number")
+        for key in columns:
+            fields.pop(f"{prefix}.{key.removesuffix('_kg')}", None)
+            fields.pop(f"{prefix}.{key.removesuffix('_kg')}_kg", None)
+        centers = {key: (box.x0 + box.x1) / 2 for key, box in columns.items()}
+        candidates: dict[str, list[tuple[str, BBox]]] = {key: [] for key in columns}
+        for line in lines:
+            if line.page_index != provenance.page_index or not line.characters:
+                continue
+            if line.bbox.y0 > row_box.y1 or line.bbox.y1 < row_box.y0:
+                continue
+            text = "".join(char.text for char in line.characters)
+            for match in _PRINTED_NUMBER.finditer(text):
+                box = line.box_for(*match.span())
+                if box is None or box.y0 > row_box.y1 or box.y1 < row_box.y0:
+                    continue
+                center = (box.x0 + box.x1) / 2
+                nearest = sorted((abs(center - x), key) for key, x in centers.items())
+                if nearest[0][0] < min(0.035, nearest[1][0]):
+                    candidates[nearest[0][1]].append((match.group(), box))
+        for key, matches in candidates.items():
+            if len(matches) == 1:
+                value, box = matches[0]
+                fields[f"{prefix}.{key}"] = Field(
+                    kind="scalar",
+                    value=value,
+                    raw_text=value,
+                    value_type=ValueType.DECIMAL,
+                    agreement=Agreement.SINGLE_READER,
+                    provenance=provenance.model_copy(
+                        update={"bbox": box, "reader_version": VERSION}
+                    ),
+                )
+
+
+def delivery_cargo_description(
+    fields: dict[str, Field], lines: tuple[EvidenceLine, ...]
+) -> Field | None:
+    """Read a single container's wrapped STC description up to a freight clause."""
+    containers = [
+        field for path, field in fields.items() if re.fullmatch(r"containers\[\d+\]\.number", path)
+    ]
+    if len(containers) != 1 or containers[0].provenance.reader != ReaderKind.TEXT_LAYER:
+        return None
+    provenance = containers[0].provenance
+    row = provenance.bbox
+    page_lines = [line for line in lines if line.page_index == provenance.page_index]
+    for header in reversed(page_lines):
+        if not header.characters or header.bbox.y1 >= row.y0:
+            continue
+        description = re.search(r"\bdescription\s+of\s+goods\b", header.text, re.I)
+        volume = _DELIVERY_VOLUME.search(header.text)
+        if description and volume:
+            left = header.box_for(*description.span())
+            right = header.box_for(*volume.span())
+            if left and right and left.x1 < right.x0:
+                break
+    else:
+        return None
+    fragments: list[TextCharacter] = []
+    previous_bottom = row.y0
+    for line in sorted(page_lines, key=lambda item: item.bbox.y0):
+        if line.bbox.y1 < row.y0 or not line.characters:
+            continue
+        if line.bbox.y0 - previous_bottom > 0.015:
+            break
+        chars = [
+            char
+            for char in line.characters
+            if left.x0 - 0.01 <= char.bbox.x0 and char.bbox.x1 < right.x0 - 0.005
+        ]
+        if not chars or not any(char.text.strip() for char in chars):
+            continue
+        if fragments:
+            fragments.append(TextCharacter(" ", chars[0].bbox))
+        fragments.extend(chars)
+        previous_bottom = max(previous_bottom, line.bbox.y1)
+    text = "".join(char.text for char in fragments)
+    match = re.search(r"^\s*STC\s*:\s*(.+?)\s+FREIGHT\s+(?:PREPAID|COLLECT)\b", text, re.I)
+    if not match:
+        return None
+    value = " ".join(match.group(1).split())
+    box = _box(char.bbox for char in fragments[match.start(1) : match.end(1)])
+    return Field(
+        kind="scalar",
+        value=value,
+        raw_text=value,
+        value_type=ValueType.STRING,
+        agreement=Agreement.SINGLE_READER,
+        provenance=provenance.model_copy(update={"bbox": box, "reader_version": VERSION}),
+    )
 
 
 def compact_evidence(lines: tuple[EvidenceLine, ...], *, max_characters: int) -> str:

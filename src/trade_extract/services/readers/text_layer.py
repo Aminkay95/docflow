@@ -17,7 +17,10 @@ class TextLayerReader:
     def read(
         self, provider: ModelProvider, request: InferenceRequest, pages: tuple[PageInput, ...]
     ) -> ProviderResult | None:
-        lines = evidence_lines(tuple(page for page in pages if page.characters))
+        lines = evidence_lines(
+            tuple(page for page in pages if page.characters),
+            preserve_text_order=request.document_type == "delivery_order",
+        )
         if not lines:
             return None
         # A reader may be used independently of the extraction service, so keep a
@@ -65,6 +68,8 @@ def reconstruct_values(
     if not isinstance(compact_values, (list, dict)):
         raise ValueError("invalid_compact_provider_values")
     by_id = {line.evidence_id: line for line in lines}
+    if len(by_id) != len(lines):
+        raise ValueError("invalid_compact_provider_duplicate_evidence")
     spec = get_schema(request.document_type)
     allowed = set(request.schema_json.get("allowed_scalar_paths", ()))
     fields = {}
@@ -89,8 +94,12 @@ def reconstruct_values(
         field_spec = spec.model.field_set.resolve(path)
         line = by_id.get(evidence_id)
         if path not in allowed:
+            if "phase" in request.schema_json:
+                raise ValueError("invalid_compact_provider_out_of_phase_path")
             continue
         if field_spec is None or line is None or line.reader != reader:
+            if "phase" in request.schema_json:
+                raise ValueError("invalid_compact_provider_citation")
             continue
         source_text = (
             "".join(char.text for char in line.characters) if line.characters else line.text
@@ -129,7 +138,12 @@ def reconstruct_values(
         "schema_version": spec.version,
         "source": request.source_json,
         "fields": fields,
-        "tables": raw.get("tables", {}),
+        "tables": (
+            {}
+            if request.document_type == "delivery_order"
+            and request.schema_json.get("phase") == "header_party"
+            else raw.get("tables", {})
+        ),
         "extension": {},
     }
     return replace(result, raw_json=payload, repair_json=raw)
