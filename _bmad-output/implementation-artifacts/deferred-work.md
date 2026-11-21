@@ -156,3 +156,7 @@ status: open
 - source_spec: `_bmad-output/implementation-artifacts/spec-job-extraction-progress.md`
   summary: Complete desktop/mobile visual inspection of extraction progress when browser URL verification is available.
   evidence: Browser access host was unavailable and native CUA stopped because it could not confidently determine the Windows browser URL. Automated behavior, markup, lint and type checks passed, but no screenshots/layout inspection were obtained; no alternate UI automation was attempted.
+
+- source_spec: `spec-client-onboarding-management.md`
+  summary: Repair nine pre-existing review-upload JavaScript test failures in the document workspace harness.
+  evidence: Both baseline 02e18bc and current review_upload.test.cjs runs report 11 passed and 9 failed, including message?.querySelector is not a function and missing workspace/open/children mocks. New client-management browser tests pass independently.

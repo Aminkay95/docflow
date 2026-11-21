@@ -1,0 +1,78 @@
+{% extends "base.html" %}
+
+{% block content %}
+
+<div class="client-management">
+
+<section class="card">
+
+  <header class="card-header"><div><h2 class="card-title">{{ client.name }}</h2><p class="card-subtitle mono">{{ client.slug }}</p></div><span class="badge badge-{{ client.status | badge }}">{{ client.status | humanize }}</span></header>
+
+  <div class="card-body"><p>Created {{ client.created_at | when }}{% if client.terminated_at %} · Terminated {{ client.terminated_at | when }}{% endif %}</p><p>Default webhook delivery: {{ 'Enabled' if client.webhook_enabled else 'Disabled' }}{% if client.webhook_url %} · {{ client.webhook_url }}{% endif %}</p><a class="btn btn-secondary" href="/review/jobs?client={{ client.id }}">View jobs</a></div>
+
+</section>
+
+{% if reviewer.role == "admin" %}
+
+{% include "partials/client_credentials.html" %}
+
+<section class="card"><header class="card-header"><h2 class="card-title">Client details</h2></header><div class="card-body">
+
+<form method="post" class="client-form" action="/review/clients/{{ client.id }}/details" data-client-form="details">
+
+<label class="field"><span class="field-label">Name</span><input name="name" required maxlength="200" value="{{ client.name }}"></label>
+
+<label class="field"><span class="field-label">Unique slug</span><input name="slug" required maxlength="100" pattern="[a-z0-9]+([-_][a-z0-9]+)*" value="{{ client.slug }}"></label>
+
+<p class="client-form-error" role="alert"></p><button class="btn btn-primary">Save details</button>
+
+</form></div></section>
+
+<section class="card"><header class="card-header"><h2 class="card-title">API keys</h2></header>
+
+<div class="table-wrap"><table class="table"><thead><tr><th>Name / prefix</th><th>Scopes</th><th>Expires</th><th>Last used</th><th>Access</th></tr></thead><tbody>
+
+{% for key in keys %}<tr><td>{{ key.name }}<small class="mono block">{{ key.key_prefix }}…</small></td><td>{{ key.scopes | join(', ') }}</td><td>{{ key.expires_at | when }}</td><td>{{ key.last_used_at | when }}</td><td>{% if key.revoked_at %}Revoked {{ key.revoked_at | when }}{% else %}{% if key.expires_at and key.expires_at <= now %}<span class="badge badge-neutral">Expired</span>{% else %}<span class="badge badge-success">Active</span>{% endif %}<form method="post" action="/review/clients/{{ client.id }}/keys/{{ key.id }}/revoke" data-client-form="revoke" data-confirm="Revoke this key? API access using it will stop immediately."><p class="client-form-error" role="alert"></p><button class="btn btn-danger btn-sm">Revoke key</button></form>{% endif %}</td></tr>{% endfor %}
+
+</tbody></table></div>
+
+{% if client.status != 'terminated' %}<div class="card-body"><h3>Create API key</h3><form method="post" class="client-form" action="/review/clients/{{ client.id }}/keys" data-client-form="key">
+
+<label class="field"><span class="field-label">Key name</span><input name="name" required maxlength="200"></label>
+
+<fieldset><legend>Scopes</legend>{% for scope in scopes %}<label class="client-check"><input type="checkbox" name="scopes" value="{{ scope }}" checked> {{ scope }}</label>{% endfor %}</fieldset>
+
+<label class="field"><span class="field-label">Expires (optional, your local time)</span><input type="datetime-local" name="expires_at"></label>
+
+<p class="client-form-error" role="alert"></p><button class="btn btn-primary">Create key</button></form></div>{% endif %}</section>
+
+<section class="card"><header class="card-header"><h2 class="card-title">Webhook</h2></header><div class="card-body">
+
+<form method="post" class="client-form" action="/review/clients/{{ client.id }}/webhook" data-client-form="webhook">
+
+<label class="field"><span class="field-label">Webhook URL</span><input type="url" name="webhook_url" value="{{ client.webhook_url or '' }}"></label>
+
+<label class="client-check"><input type="checkbox" name="enabled" {% if client.webhook_enabled %}checked{% endif %}> Enable default webhook delivery</label>
+<p class="field-hint">Disabling the default does not cancel queued deliveries or explicit submission webhook overrides.</p>
+
+<p class="client-form-error" role="alert"></p><button class="btn btn-primary">Save webhook</button></form>
+
+<form method="post" class="client-form" action="/review/clients/{{ client.id }}/webhook/rotate" data-client-form="rotate" data-confirm="Rotate the webhook secret? Update your receiver to use the new secret immediately."><p class="field-hint">Rotation replaces the signing secret immediately. Pending deliveries also use the replacement.</p><p class="client-form-error" role="alert"></p><button class="btn btn-secondary">Rotate webhook secret</button></form>
+
+</div></section>
+
+<section class="card"><header class="card-header"><h2 class="card-title">Account access</h2></header><div class="card-body">
+
+{% if client.status == 'terminated' %}<p>This account is permanently terminated. Extraction history is retained.</p>{% else %}
+
+<form method="post" class="client-form" action="/review/clients/{{ client.id }}/status" data-client-form="status" data-confirm="Change account access? Suspension blocks API access immediately."><input type="hidden" name="status" value="{{ 'suspended' if client.status == 'active' else 'active' }}"><p class="client-form-error" role="alert"></p><button class="btn btn-secondary">{{ 'Suspend account' if client.status == 'active' else 'Activate account' }}</button></form>
+
+<form method="post" class="client-form" action="/review/clients/{{ client.id }}/status" data-client-form="status" data-confirm="Permanently terminate this client? This cannot be undone and all API access will stop."><input type="hidden" name="status" value="terminated"><label class="client-check"><input type="checkbox" name="confirmed" required> I confirm permanent termination.</label><p class="client-form-error" role="alert"></p><button class="btn btn-danger">Terminate account</button></form>
+
+{% endif %}</div></section>
+
+{% else %}<p class="text-muted">Client settings and credentials are managed by administrators.</p>{% endif %}
+
+</div>
+
+{% endblock %}

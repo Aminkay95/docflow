@@ -1883,3 +1883,21 @@ pre {
  .extraction-progress .card-header { align-items: flex-start; flex-direction: column; gap: .5rem; }
 }
 @media (prefers-reduced-motion: reduce) { .extraction-progress .spinner { animation: none; } }
+
+/* Client administration uses the existing cards, fields and table shell. */
+.client-management { display: grid; grid-template-columns: minmax(0, 1fr); gap: 24px; min-width: 0; }
+.client-form { display: grid; grid-template-columns: minmax(0, 1fr); min-width: 0; gap: 16px; max-width: 640px; }
+.client-form + .client-form { margin-top: 24px; padding-top: 24px; border-top: 1px solid var(--outline-gray-2); }
+.client-form fieldset { min-width: 0; border: 1px solid var(--outline-gray-2); border-radius: 8px; padding: 16px; }
+.client-check { display: flex; align-items: center; gap: 8px; margin: 8px 0; }
+.client-check input { width: auto; }
+.client-form-error { color: var(--red-700); margin: 0; overflow-wrap: anywhere; }
+.client-form-error:empty { display: none; }
+.client-credentials[hidden], .client-form[hidden] { display: none; }
+.client-credentials { margin: 24px 0; border: 2px solid var(--outline-blue-3); }
+.client-secret { display: block; user-select: all; overflow-wrap: anywhere; padding: 16px; margin: 8px 0 24px; background: var(--surface-gray-2); }
+@media (max-width: 640px) { .client-form .form-actions { flex-wrap: wrap; } .client-management .card-body { overflow-wrap: anywhere; } }
+
+.client-management, .client-management .card-body, .client-form { width: 100%; max-width: 100%; min-width: 0; }
+.client-form input { max-width: 100%; }
+.client-list .table-wrap { position: relative; }

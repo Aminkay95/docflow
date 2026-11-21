@@ -104,3 +104,15 @@ node --test tests/review_upload.test.cjs
 docker compose up -d postgres
 uv run pytest -q -m integration
 ```
+
+
+### Client onboarding in the console
+
+Administrators can onboard clients from **Clients > New client** in the review console.
+The client detail page manages names, slugs, scoped API keys, webhook delivery and account
+access. API keys and webhook signing secrets appear only after successful creation or
+rotation: copy them into a secure credential manager before continuing. They disappear on
+refresh and cannot be retrieved later; create a replacement key or rotate the webhook secret
+if needed. Reviewers and auditors can view client metadata, while management and credentials
+require an administrator. Suspension blocks API access immediately; activation restores it.
+Termination requires confirmation, permanently blocks access and retains extraction history.

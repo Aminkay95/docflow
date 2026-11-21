@@ -61,3 +61,10 @@ def principal(request: Request, session: Session = Depends(get_session)) -> Revi
         if not token or not hmac.compare_digest(token, data["csrf"]):
             raise HTTPException(403, "Invalid CSRF token")
     return reviewer
+
+
+def admin(reviewer: Reviewer = Depends(principal)) -> Reviewer:
+    """Require administrator privileges after session and CSRF validation."""
+    if reviewer.role != "admin":
+        raise HTTPException(403, "Administrator access required")
+    return reviewer

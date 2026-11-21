@@ -1,9 +1,10 @@
 {% extends "base.html" %}
 {% from "partials/icon.html" import icon %}
 {% block content %}
-<section class="card">
+<section class="card client-list">
   <header class="card-header">
     <div><h2 class="card-title">Clients</h2><p class="card-subtitle">Tenants with API credentials for document submission.</p></div>
+    {% if reviewer.role == "admin" %}<a class="btn btn-primary" href="/review/clients/new">New client</a>{% endif %}
     <span class="badge badge-neutral">{{ total }} client{{ '' if total == 1 else 's' }}</span>
   </header>
   {% if rows %}
@@ -16,14 +17,14 @@
           <td>
             <span class="client-cell">
               <span class="client-icon" aria-hidden="true">{{ icon('building-2', 16) }}</span>
-              <span><strong>{{ client.name }}</strong><small class="mono block text-muted">{{ client.slug }}</small></span>
+              <span><a href="/review/clients/{{ client.id }}"><strong>{{ client.name }}</strong></a><small class="mono block text-muted">{{ client.slug }}</small></span>
             </span>
           </td>
           <td><span class="badge badge-{{ client.status | badge }}">{{ client.status | humanize }}</span></td>
           <td class="num tabular">{{ job_count }}</td>
           <td><span class="{{ 'text-muted' if not client.webhook_enabled else '' }}">{{ 'Enabled' if client.webhook_enabled else 'Disabled' }}</span></td>
           <td class="text-muted nowrap">{{ client.created_at | when }}</td>
-          <td class="actions-col"><a class="btn btn-secondary btn-sm" href="/review/jobs?client={{ client.id }}">View jobs</a></td>
+          <td class="actions-col"><a class="btn btn-secondary btn-sm" href="/review/clients/{{ client.id }}">Details</a> <a class="btn btn-secondary btn-sm" href="/review/jobs?client={{ client.id }}">View jobs</a></td>
         </tr>
       {% endfor %}
       </tbody>
@@ -33,7 +34,7 @@
   <div class="empty">
     <span class="empty-icon">{{ icon('building-2', 20) }}</span>
     <p class="empty-title">No clients</p>
-    <p class="empty-copy">Create a client with the CLI to start accepting submissions.</p>
+    <p class="empty-copy">An administrator can create a client here to start accepting submissions.</p>
   </div>
   {% endif %}
   {% set pagination_item = "client" %}

@@ -1,0 +1,33 @@
+{% extends "base.html" %}
+
+{% block content %}
+
+<section class="card client-management">
+
+  <header class="card-header"><div><h2 class="card-title">New client</h2><p class="card-subtitle">Create an active account and initial API credentials.</p></div></header>
+
+  <div class="card-body">
+
+    <form method="post" class="client-form" action="/review/clients" data-client-form="create">
+
+      <label class="field"><span class="field-label">Name</span><input name="name" required maxlength="200" autocomplete="organization"></label>
+
+      <label class="field"><span class="field-label">Unique slug</span><input name="slug" required maxlength="100" pattern="[a-z0-9]+([-_][a-z0-9]+)*"><span class="field-hint">Lowercase letters, numbers, hyphens and underscores.</span></label>
+
+      <label class="field"><span class="field-label">Webhook URL (optional)</span><input name="webhook_url" type="url"><span class="field-hint">Providing a URL enables webhook delivery.</span></label>
+
+      <fieldset><legend>Initial API key scopes</legend>{% for scope in scopes %}<label class="client-check"><input type="checkbox" name="scopes" value="{{ scope }}" checked> {{ scope }}</label>{% endfor %}</fieldset>
+
+      <p class="client-form-error" role="alert"></p>
+
+      <div class="form-actions"><button class="btn btn-primary" type="submit">Create client</button><a class="btn btn-secondary" href="/review/clients">Cancel</a></div>
+
+    </form>
+
+  </div>
+
+</section>
+
+{% include "partials/client_credentials.html" %}
+
+{% endblock %}

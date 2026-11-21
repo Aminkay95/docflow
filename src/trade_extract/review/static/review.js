@@ -940,6 +940,99 @@ if (initialWorkspace) {
   if (figure && figure.id) selectSourcePage(Number(figure.id.replace('page-', '')));
 }
 
+/* ---------- Client administration ---------- */
+
+let clientCredentialsPending = false;
+let clientManagementBusy = false;
+let clientCanonicalUrl = null;
+
+function clearClientCredentials() {
+  const values = query('#client-credential-values');
+  if (values) values.textContent = '';
+  const panel = query('#client-credentials');
+  if (panel) panel.hidden = true;
+}
+
+queryAll('[data-client-form]').forEach(form => {
+  form.addEventListener('submit', async event => {
+    event.preventDefault();
+    const button = form.querySelector('button[type="submit"], button');
+    const errorNode = form.querySelector('.client-form-error');
+    if (clientCredentialsPending) {
+      if (errorNode) errorNode.textContent = 'Save the displayed credentials and select Continue before making more changes.';
+      return;
+    }
+    if (clientManagementBusy || (button && button.disabled)) return;
+    clientManagementBusy = true;
+    setBusy(button, true);
+    if (errorNode) errorNode.textContent = '';
+    try {
+      if (form.dataset.confirm && !(await confirmAction(form.dataset.confirm))) return;
+      const fields = new FormData(form);
+      const kind = form.dataset.clientForm;
+      const payload = Object.fromEntries(fields.entries());
+      if (kind === 'create' || kind === 'key') payload.scopes = fields.getAll('scopes');
+      if (kind === 'webhook') payload.enabled = fields.has('enabled');
+      if (kind === 'status') payload.confirmed = fields.has('confirmed');
+      if (kind === 'key') payload.expires_at = fields.get('expires_at')
+        ? new Date(fields.get('expires_at')).toISOString() : null;
+      const response = await fetchWithTimeout(form.action, {
+        method: 'POST', cache: 'no-store',
+        headers: {'Content-Type': 'application/json', 'X-CSRF-Token': csrfToken()},
+        body: JSON.stringify(payload),
+      });
+      const body = await response.json();
+      if (!response.ok) {
+        const detail = typeof body.detail === 'string' ? body.detail
+          : body.error && body.error.message;
+        throw new Error(detail || 'Check your fields and try again.');
+      }
+      const destination = body.client_url || location.pathname;
+      if (body.api_key || body.webhook_secret) {
+        clientCredentialsPending = true;
+        clientCanonicalUrl = destination;
+        clearClientCredentials();
+        const panel = query('#client-credentials');
+        const values = query('#client-credential-values');
+        [['api_key', 'API key'], ['webhook_secret', 'Webhook signing secret']].forEach(([key, label]) => {
+          if (!body[key]) return;
+          const heading = document.createElement('strong');
+          heading.textContent = label;
+          const value = document.createElement('code');
+          value.className = 'client-secret';
+          value.textContent = body[key];
+          values.appendChild(heading);
+          values.appendChild(value);
+        });
+        query('#client-credentials-continue').href = destination;
+        if (kind === 'create') {
+          history.replaceState(null, '', destination);
+          form.hidden = true;
+        }
+        panel.hidden = false;
+        panel.focus();
+        panel.scrollIntoView({block: 'start', behavior: 'smooth'});
+      } else {
+        location.assign(destination);
+      }
+    } catch (error) {
+      if (errorNode) errorNode.textContent = timedOut(error)
+        ? 'The request took too long. Reload to check whether it succeeded.'
+        : error.message || 'Network error. Check your connection and try again.';
+    } finally {
+      clientManagementBusy = false;
+      setBusy(button, false);
+    }
+  });
+});
+
+if (typeof window !== 'undefined' && typeof window.addEventListener === 'function') {
+  window.addEventListener('pagehide', clearClientCredentials);
+  window.addEventListener('pageshow', event => {
+    if (event.persisted && clientCanonicalUrl) location.replace(clientCanonicalUrl);
+  });
+}
+
 /* ---------- Navigation progress for real page loads ---------- */
 
 document.addEventListener('submit', event => {

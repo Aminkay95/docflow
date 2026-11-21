@@ -4,7 +4,7 @@ import hashlib
 import hmac
 import logging
 import secrets
-from datetime import timedelta
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
 from urllib.parse import quote
@@ -20,6 +20,7 @@ from starlette.concurrency import run_in_threadpool
 
 from trade_extract.api.deps import get_clock, get_session, get_settings, get_storage
 from trade_extract.config import Settings
+from trade_extract.db.models.api_key import ApiKey
 from trade_extract.db.models.client import Client
 from trade_extract.db.models.document import Document
 from trade_extract.db.models.evidence import ConflictRecord, ConflictSource, ReviewItem
@@ -34,10 +35,11 @@ from trade_extract.db.repositories.evidence import conflicts_for, review_counts
 from trade_extract.domain import errors
 from trade_extract.domain.clock import Clock
 from trade_extract.domain.ids import new_id
-from trade_extract.review.auth import password_hash, principal, signer, verify_password
+from trade_extract.review.auth import admin, password_hash, principal, signer, verify_password
 from trade_extract.review.line_items import document_line_items
 from trade_extract.review.mail import send_password_reset_email
 from trade_extract.review.progress import project as job_progress
+from trade_extract.services import clients as client_management
 from trade_extract.services import ingest
 from trade_extract.services.jobs import emit_terminal_result, job_result, read_document
 from trade_extract.services.limits import (
@@ -172,6 +174,11 @@ def _breadcrumbs(path: str) -> list[dict[str, str]]:
         return [{"label": "Activity", "href": ""}]
     if path.startswith("/review/team"):
         return [{"label": "Team", "href": ""}]
+    if path.startswith("/review/clients/"):
+        return [
+            {"label": "Clients", "href": "/review/clients"},
+            {"label": "New client" if path.endswith("/new") else "Client details", "href": ""},
+        ]
     if path.startswith("/review/clients"):
         return [{"label": "Clients", "href": ""}]
     return [{"label": "Dashboard", "href": ""}]
@@ -1126,6 +1133,237 @@ def clients(
         counts=counts_for(session),
         **pagination,
     )
+
+
+class ClientInput(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    name: str
+    slug: str
+    webhook_url: str | None = None
+    scopes: list[str] = Field(default_factory=lambda: list(client_management.DEFAULT_SCOPES))
+
+
+class ClientDetailsInput(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    name: str
+    slug: str
+
+
+class ClientKeyInput(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    name: str
+    scopes: list[str]
+    expires_at: datetime | None = None
+
+
+class ClientWebhookInput(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    webhook_url: str | None = None
+    enabled: bool = False
+
+
+class ClientStatusInput(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    status: str
+    confirmed: bool = False
+
+
+def client_write(session: Session, operation: Any) -> JSONResponse:
+    """Commit before exposing any newly generated credentials."""
+    try:
+        result = operation()
+        session.commit()
+    except IntegrityError:
+        session.rollback()
+        raise HTTPException(
+            409, "A client slug or key already exists. Reload and try again."
+        ) from None
+    except Exception:
+        session.rollback()
+        raise
+    return JSONResponse(result, headers={"Cache-Control": "no-store"})
+
+
+@router.get("/clients/new")
+def new_client_page(
+    request: Request,
+    reviewer: Reviewer = Depends(admin),
+    session: Session = Depends(get_session),
+) -> Response:
+    return render(
+        request,
+        "New client",
+        template="new_client.html",
+        scopes=client_management.DEFAULT_SCOPES,
+        counts=counts_for(session),
+    )
+
+
+@router.post("/clients")
+def create_client(
+    request: Request,
+    payload: ClientInput,
+    reviewer: Reviewer = Depends(admin),
+    session: Session = Depends(get_session),
+) -> JSONResponse:
+    def operation() -> dict:
+        client, credentials = client_management.provision(
+            session,
+            **payload.model_dump(),
+            settings=request.app.state.settings,
+            now=request.app.state.clock.now(),
+        )
+        return dict(**credentials, client_url=f"/review/clients/{client.id}")
+
+    return client_write(session, operation)
+
+
+@router.get("/clients/{client_id}")
+def client_detail(
+    request: Request,
+    client_id: str,
+    reviewer: Reviewer = Depends(principal),
+    session: Session = Depends(get_session),
+) -> Response:
+    client = session.get(Client, client_id)
+    if client is None:
+        raise HTTPException(404, "Client not found")
+    keys = (
+        list(
+            session.scalars(
+                select(ApiKey)
+                .where(ApiKey.client_id == client.id)
+                .order_by(ApiKey.created_at.desc(), ApiKey.id)
+            )
+        )
+        if reviewer.role == "admin"
+        else []
+    )
+    response = render(
+        request,
+        client.name,
+        template="client.html",
+        client=client,
+        keys=keys,
+        now=request.app.state.clock.now(),
+        scopes=client_management.DEFAULT_SCOPES,
+        counts=counts_for(session),
+    )
+    response.headers["Cache-Control"] = "no-store"
+    return response
+
+
+@router.post("/clients/{client_id}/details")
+def save_client_details(
+    request: Request,
+    client_id: str,
+    payload: ClientDetailsInput,
+    reviewer: Reviewer = Depends(admin),
+    session: Session = Depends(get_session),
+) -> JSONResponse:
+    def operation() -> dict:
+        client = client_management.client_for_update(session, client_id)
+        client_management.update_details(
+            session, client, **payload.model_dump(), now=request.app.state.clock.now()
+        )
+        return {"saved": True}
+
+    return client_write(session, operation)
+
+
+@router.post("/clients/{client_id}/keys")
+def create_client_key(
+    request: Request,
+    client_id: str,
+    payload: ClientKeyInput,
+    reviewer: Reviewer = Depends(admin),
+    session: Session = Depends(get_session),
+) -> JSONResponse:
+    def operation() -> dict:
+        client = client_management.client_for_update(session, client_id)
+        key, token = client_management.create_key(
+            session,
+            client,
+            **payload.model_dump(),
+            settings=request.app.state.settings,
+            now=request.app.state.clock.now(),
+        )
+        return {"api_key": token, "key_prefix": key.key_prefix}
+
+    return client_write(session, operation)
+
+
+@router.post("/clients/{client_id}/keys/{key_id}/revoke")
+def revoke_client_key(
+    request: Request,
+    client_id: str,
+    key_id: str,
+    reviewer: Reviewer = Depends(admin),
+    session: Session = Depends(get_session),
+) -> JSONResponse:
+    def operation() -> dict:
+        client = client_management.client_for_update(session, client_id)
+        client_management.revoke_key(session, client, key_id, now=request.app.state.clock.now())
+        return {"revoked": True}
+
+    return client_write(session, operation)
+
+
+@router.post("/clients/{client_id}/webhook")
+def save_client_webhook(
+    request: Request,
+    client_id: str,
+    payload: ClientWebhookInput,
+    reviewer: Reviewer = Depends(admin),
+    session: Session = Depends(get_session),
+) -> JSONResponse:
+    def operation() -> dict:
+        client = client_management.client_for_update(session, client_id)
+        client_management.configure_webhook(
+            client,
+            url=payload.webhook_url,
+            enabled=payload.enabled,
+            settings=request.app.state.settings,
+            now=request.app.state.clock.now(),
+        )
+        return {"saved": True}
+
+    return client_write(session, operation)
+
+
+@router.post("/clients/{client_id}/webhook/rotate")
+def rotate_client_webhook(
+    request: Request,
+    client_id: str,
+    reviewer: Reviewer = Depends(admin),
+    session: Session = Depends(get_session),
+) -> JSONResponse:
+    def operation() -> dict:
+        client = client_management.client_for_update(session, client_id)
+        secret = client_management.rotate_webhook_secret(
+            client, settings=request.app.state.settings, now=request.app.state.clock.now()
+        )
+        return {"webhook_secret": secret}
+
+    return client_write(session, operation)
+
+
+@router.post("/clients/{client_id}/status")
+def save_client_status(
+    request: Request,
+    client_id: str,
+    payload: ClientStatusInput,
+    reviewer: Reviewer = Depends(admin),
+    session: Session = Depends(get_session),
+) -> JSONResponse:
+    def operation() -> dict:
+        client = client_management.client_for_update(session, client_id)
+        client_management.change_status(
+            client, **payload.model_dump(), now=request.app.state.clock.now()
+        )
+        return {"status": client.status}
+
+    return client_write(session, operation)
 
 
 def workspace_data(session: Session, row: Document) -> dict[str, Any]:
