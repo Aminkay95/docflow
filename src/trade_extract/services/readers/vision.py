@@ -31,6 +31,8 @@ class VisionReader:
         if not images:
             return None
         limit = self.settings.provider_max_images
+        if self.settings.provider == "groq":
+            limit = min(limit, 3)
         # One original page accompanies its row crops for scalar/header context.
         batches: list[tuple[PageImage, tuple[NativeCrop, ...]]] = []
         for image in images:

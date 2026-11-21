@@ -30,6 +30,17 @@ from trade_extract.services.trust import observe
 
 def handle(session: Session, task: JobTask, *, settings: Settings, clock: Clock) -> None:
     now = clock.now()
+    claim = (task.locked_by, task.attempts, task.locked_at)
+
+    def still_owns_task() -> bool:
+        session.scalar(select(Job.id).where(Job.id == job.id).with_for_update())
+        current = session.get(JobTask, task.id, with_for_update=True, populate_existing=True)
+        return (
+            current is not None
+            and current.status == "running"
+            and (current.locked_by, current.attempts, current.locked_at) == claim
+        )
+
     document = session.get(Document, task.document_id)
     if document is None or document.status not in ("queued", "processing"):
         return
@@ -60,6 +71,8 @@ def handle(session: Session, task: JobTask, *, settings: Settings, clock: Clock)
     evidence = evidence[: settings.provider_max_evidence_characters_per_page * max(1, len(pages))]
     if not evidence.strip():
         # No text layer: nothing for text_reason to classify — never burn a call on empty input.
+        if not still_owns_task():
+            return
         document.status = "review_required"
         document.decision = "review"
         document.decision_reason = "classification_no_text_layer"
@@ -108,6 +121,8 @@ def handle(session: Session, task: JobTask, *, settings: Settings, clock: Clock)
             settings=settings,
         )
     except (ProviderError, ValueError, json.JSONDecodeError) as exc:
+        if not still_owns_task():
+            return
         document.status = "review_required"
         document.decision = "review"
         document.decision_reason = f"classification_failed:{type(exc).__name__}"
@@ -136,6 +151,8 @@ def handle(session: Session, task: JobTask, *, settings: Settings, clock: Clock)
         return
 
     assert verdict is not None
+    if not still_owns_task():
+        return
 
     if verdict.document_type == "unknown":
         # Low-confidence or unknown: human review, never guess a type to keep the pipeline moving.
@@ -166,7 +183,6 @@ def handle(session: Session, task: JobTask, *, settings: Settings, clock: Clock)
             segment.document_type = "unknown"
             segment.confidence = verdict.confidence
             segment.status = "failed"
-        session.commit()
     else:
         # Confident registered type: persist verdict, then enqueue extraction.
         document.document_type = verdict.document_type
@@ -194,7 +210,6 @@ def handle(session: Session, task: JobTask, *, settings: Settings, clock: Clock)
             now=now,
             dedupe_key=f"extract_segment:{document.id}",
         )
-        session.commit()
 
     tasks_repo.rearm(
         session,

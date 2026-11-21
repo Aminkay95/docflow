@@ -187,6 +187,7 @@ def test_local_model_uses_llama_server_for_text_and_vision():
         return httpx.Response(200, json={"choices": [{"message": {"content": "{}"}}]})
 
     settings = Settings(
+        _env_file=None,
         provider="local",
         deepseek_api_key="",
         provider_input_price_usd_per_million=100,
@@ -308,3 +309,243 @@ def test_input_budget_and_truncated_output_fail_with_named_errors_before_promoti
     assert attempts[0].status == "failed"
     assert attempts[0].input_tokens == 10
     assert attempts[0].output_tokens == 4096
+
+
+@pytest.mark.parametrize("backend", ["groq", "deepseek", "local"])
+def test_environment_provider_switch(monkeypatch, backend):
+    monkeypatch.setenv("PROVIDER", backend)
+    monkeypatch.setenv("GROQ_API_KEY", "groq-test-secret")
+    monkeypatch.setenv("DEEPSEEK_API_KEY", "deepseek-test-secret")
+    settings = Settings(_env_file=None)
+    assert make_provider(settings, recorder=lambda attempt: None).name == backend
+
+
+def test_groq_requires_own_key_and_https():
+    with pytest.raises(ValidationError, match="GROQ_API_KEY"):
+        Settings(provider="groq", groq_api_key="", deepseek_api_key="other-secret")
+    with pytest.raises(ValidationError, match="GROQ_BASE_URL"):
+        Settings(groq_base_url="http://insecure.example")
+    settings = Settings(provider="groq", groq_api_key="private-groq-secret")
+    assert "private-groq-secret" not in repr(settings)
+    with pytest.raises(ValueError, match="live_provider_requires_recorder"):
+        make_provider(settings)
+
+
+def test_groq_text_and_vision_use_own_models_and_compatible_payload():
+    from trade_extract.providers.groq import GroqProvider
+
+    calls, attempts = [], []
+
+    def handler(req):
+        calls.append(req)
+        return httpx.Response(
+            200,
+            json={
+                "choices": [{"message": {"content": "{}"}, "finish_reason": "stop"}],
+                "usage": {"prompt_tokens": 42, "completion_tokens": 7},
+            },
+        )
+
+    settings = Settings(
+        provider="groq",
+        groq_api_key="groq-secret",
+        groq_text_model="text-model",
+        groq_vision_model="vision-model",
+    )
+    provider = GroqProvider(
+        settings,
+        recorder=attempts.append,
+        client=httpx.Client(transport=httpx.MockTransport(handler)),
+    )
+    assert provider.text_reason(request()).input_tokens == 42
+    image_bytes = make_image("PNG")
+    import io
+
+    from PIL import Image
+
+    width, height = Image.open(io.BytesIO(image_bytes)).size
+    image = PageImage(0, image_bytes, width, height, content_type="image/png")
+    assert provider.vision_extract(replace(request(), pages=(image,))).model == "vision-model"
+    for req, model in zip(calls, ("text-model", "vision-model"), strict=True):
+        body = json.loads(req.content)
+        assert str(req.url) == "https://api.groq.com/openai/v1/chat/completions"
+        assert req.headers["Authorization"] == "Bearer groq-secret"
+        assert body["model"] == model
+        assert body["response_format"] == {"type": "json_object"}
+        assert "thinking" not in body and "chat_template_kwargs" not in body
+    assert any(
+        part["type"] == "image_url"
+        for part in json.loads(calls[1].content)["messages"][1]["content"]
+    )
+    assert len(attempts) == 2
+    with pytest.raises(ProviderError, match="image_limit_error"):
+        provider.vision_extract(replace(request(), pages=(image,) * 4))
+    assert len(calls) == 2
+
+
+def test_groq_rate_limit_is_retried_and_recorded():
+    from trade_extract.providers.groq import GroqProvider
+
+    calls, attempts = [], []
+
+    def handler(req):
+        calls.append(req)
+        if len(calls) == 1:
+            return httpx.Response(429)
+        return httpx.Response(200, json={"choices": [{"message": {"content": "{}"}}]})
+
+    provider = GroqProvider(
+        Settings(provider="groq", groq_api_key="test"),
+        recorder=attempts.append,
+        sleep=lambda seconds: None,
+        client=httpx.Client(transport=httpx.MockTransport(handler)),
+    )
+    provider.text_reason(request())
+    assert [attempt.status for attempt in attempts] == ["failed", "succeeded"]
+
+
+def test_groq_image_tokens_and_backend_prices_enforce_budgets():
+    from trade_extract.providers.groq import GroqProvider
+
+    settings = Settings(
+        provider="groq", groq_api_key="test", provider_max_estimated_input_tokens_per_page=2000
+    )
+    provider = GroqProvider(settings, recorder=lambda attempt: None)
+    image = PageImage(0, make_image(), 16, 16)
+    with pytest.raises(ProviderError, match="provider_input_budget_exhausted"):
+        provider.vision_extract(replace(request(), pages=(image,)))
+    settings = Settings(
+        provider="groq",
+        groq_api_key="test",
+        provider_cost_target_usd_per_page=0.01,
+        provider_cost_safety_ceiling_usd_per_page=0.02,
+        groq_max_output_tokens=8192,
+    )
+    provider = GroqProvider(settings, recorder=lambda attempt: None)
+    with pytest.raises(ProviderError, match="provider_cost_safety_ceiling_exhausted"):
+        provider.text_reason(request())
+
+
+def test_groq_compact_batches_preserve_global_paths_and_cap_output():
+    from trade_extract.providers.groq import GroqProvider
+    from trade_extract.services.readers.base import invoice_phase_schema
+
+    calls = []
+
+    def handler(req):
+        body = json.loads(req.content)
+        calls.append(body)
+        prompt = body["messages"][0]["content"]
+        paths = prompt.split(" Field paths: ", 1)[1].split(", ")
+        assert len(paths) <= 6
+        assert body["max_tokens"] == 900
+        assert len(prompt) < 2500
+        return httpx.Response(
+            200,
+            json={
+                "choices": [
+                    {
+                        "message": {
+                            "content": json.dumps(
+                                {
+                                    "values": [
+                                        {"path": path, "value": "printed", "evidence_id": "p0l0"}
+                                        for path in paths
+                                    ],
+                                    "tables": {},
+                                }
+                            )
+                        }
+                    }
+                ]
+            },
+        )
+
+    schema = invoice_phase_schema("bill_of_lading", "containers", rows=(5,))
+    provider = GroqProvider(
+        Settings(provider="groq", groq_api_key="test"),
+        recorder=lambda attempt: None,
+        client=httpx.Client(transport=httpx.MockTransport(handler)),
+    )
+    current = replace(
+        request(),
+        document_type="bill_of_lading",
+        schema_json=schema,
+        evidence="p0l0|p=0|b=0,0,1,1|printed",
+    )
+    raw = provider.text_reason(current).raw_json
+    assert {item["path"] for item in raw["values"]} == set(schema["allowed_scalar_paths"])
+    assert all("[5]" in item["path"] for item in raw["values"])
+    assert len(calls) == 2
+
+
+def test_groq_batch_calls_respect_document_budget():
+    from trade_extract.providers.groq import GroqProvider
+    from trade_extract.services.readers.base import invoice_phase_schema
+
+    calls = []
+
+    def handler(req):
+        calls.append(req)
+        return httpx.Response(
+            200, json={"choices": [{"message": {"content": '{"values": [], "tables": {}}'}}]}
+        )
+
+    provider = GroqProvider(
+        Settings(provider="groq", groq_api_key="test", provider_max_calls_per_page=1),
+        recorder=lambda attempt: None,
+        client=httpx.Client(transport=httpx.MockTransport(handler)),
+    )
+    current = replace(
+        request(), schema_json=invoice_phase_schema("bill_of_lading", "containers", rows=(0,))
+    )
+    with pytest.raises(ProviderError, match="provider_call_budget_exhausted"):
+        provider.text_reason(current)
+    assert len(calls) == 1
+
+
+@pytest.mark.parametrize("phase", ["header_party", "totals_tax"])
+def test_groq_scalar_phase_avoids_empty_field_batch_storm(phase):
+    from trade_extract.providers.groq import GroqProvider
+    from trade_extract.services.readers.base import invoice_phase_schema
+
+    calls = []
+
+    def handler(req):
+        body = json.loads(req.content)
+        calls.append(body)
+        assert body["max_tokens"] == 900
+        assert body["reasoning_effort"] == "none"
+        return httpx.Response(
+            200, json={"choices": [{"message": {"content": '{"values": [], "tables": {}}'}}]}
+        )
+
+    provider = GroqProvider(
+        Settings(provider="groq", groq_api_key="test"),
+        recorder=lambda attempt: None,
+        client=httpx.Client(transport=httpx.MockTransport(handler)),
+    )
+    schema = invoice_phase_schema("commercial_invoice", phase)
+    provider.text_reason(replace(request(), schema_json=schema))
+    assert len(calls) == 1
+
+
+def test_groq_batched_empty_value_maps_are_valid():
+    from trade_extract.providers.groq import GroqProvider
+    from trade_extract.services.readers.base import invoice_phase_schema
+
+    provider = GroqProvider(
+        Settings(provider="groq", groq_api_key="test"),
+        recorder=lambda attempt: None,
+        client=httpx.Client(
+            transport=httpx.MockTransport(
+                lambda req: httpx.Response(
+                    200, json={"choices": [{"message": {"content": '{"values":{},"tables":{}}'}}]}
+                )
+            )
+        ),
+    )
+    current = replace(
+        request(), schema_json=invoice_phase_schema("commercial_invoice", "line_items", rows=(0,))
+    )
+    assert provider.text_reason(current).raw_json == {"values": [], "tables": {}}

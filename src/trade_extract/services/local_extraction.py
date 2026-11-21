@@ -105,6 +105,13 @@ _RULES: dict[str, tuple[tuple[str, str], ...]] = {
 }
 
 
+def _ink_center(row: list[TextCharacter]) -> float:
+    ink = [char for char in row if not char.text.isspace() and char.text not in ",.;:"]
+    if not ink:
+        ink = [char for char in row if not char.text.isspace()]
+    return sum((char.bbox.y0 + char.bbox.y1) / 2 for char in ink) / len(ink)
+
+
 def evidence_lines(
     pages: tuple[PageInput, ...], *, preserve_text_order: bool = False
 ) -> tuple[EvidenceLine, ...]:
@@ -126,14 +133,28 @@ def evidence_lines(
                         groups.append([])
                     groups[-1].append(char)
                     continue
+                # Spaces may have baseline-only PDF rectangles. They belong to
+                # their source line but must not shift its ink baseline.
+                if char.text.isspace():
+                    if groups and groups[-1]:
+                        groups[-1].append(char)
+                    continue
+                if char.text in ",.;:" and groups and groups[-1]:
+                    previous = next((c for c in reversed(groups[-1]) if c.text.strip()), None)
+                    if (
+                        previous is not None
+                        and -0.002 <= char.bbox.x0 - previous.bbox.x1 <= 0.025
+                        and abs(char.bbox.y1 - previous.bbox.y1) <= max(0.004, char.bbox.height)
+                    ):
+                        groups[-1].append(char)
+                        continue
                 center = (char.bbox.y0 + char.bbox.y1) / 2
                 group = next(
                     (
                         row
                         for row in reversed(groups[-3:])
                         if row
-                        and abs(center - sum((c.bbox.y0 + c.bbox.y1) / 2 for c in row) / len(row))
-                        <= max(0.003, char.bbox.height * 0.6)
+                        and abs(center - _ink_center(row)) <= max(0.003, char.bbox.height * 0.6)
                     ),
                     None,
                 )
@@ -396,6 +417,30 @@ def extract_local(
             match = compiled.search(line.text)
             if match:
                 matches.append((line, match))
+        if not matches and path == "totals.payable_amount":
+            # Some PDFs store the labelled balance and its amount in separate
+            # text runs. Associate them by their printed position.
+            for anchor in lines:
+                if not re.fullmatch(
+                    r"(?:balance(?: due)?|amount due|amount payable|total payable)\s*:",
+                    anchor.text,
+                    re.I,
+                ):
+                    continue
+                for line in lines:
+                    if (
+                        line.page_index == anchor.page_index
+                        and 0 <= line.bbox.x0 - anchor.bbox.x1 <= 0.3
+                        and abs((line.bbox.y0 + line.bbox.y1 - anchor.bbox.y0 - anchor.bbox.y1) / 2)
+                        <= 0.006
+                        and (
+                            match := re.fullmatch(
+                                r"((?:[A-Z]{3}\s*|[$\u20ac\u00a3]\s*)?[0-9]+(?:,[0-9]{3})*(?:\.[0-9]+)?)",
+                                line.text,
+                            )
+                        )
+                    ):
+                        matches.append((line, match))
         values = {match.group(1).strip() for _, match in matches}
         if len(matches) != 1 or len(values) != 1:
             continue

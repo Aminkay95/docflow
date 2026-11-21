@@ -31,6 +31,50 @@ def docs(*payloads: bytes) -> list[tuple]:
     ]
 
 
+@pytest.mark.parametrize("already_dead", [False, True])
+def test_dead_classification_unblocks_finalization(api: ApiHarness, already_dead: bool) -> None:
+    clock = FrozenClock(datetime.now(UTC))
+    api.app.state.clock = clock
+    api.settings.llm_classification_enabled = True
+    api.settings.local_classification_fast_path = False
+    accepted = post_files(api, {"job_ref": "CLASSIFY-FAIL"}, docs(make_pdf([["INVOICE"]])))
+    assert accepted.status_code == 202
+
+    def run(kind, handlers=None):
+        return run_once(
+            settings=api.settings,
+            session_factory_=api.session_factory,
+            clock=clock,
+            worker_id="classification-worker",
+            kinds=[kind],
+            handlers=handlers,
+        )
+
+    assert run("prepare_file")
+    with api.session_factory() as session:
+        task = session.query(JobTask).filter_by(kind="classify_segment").one()
+        task.max_attempts = 1
+        if already_dead:
+            queue_service.mark_dead(task, now=clock.now(), error_code="KeyError", error="missing")
+        session.commit()
+
+    if not already_dead:
+
+        def fail(*args, **kwargs):
+            raise KeyError("missing")
+
+        assert run("classify_segment", {"classify_segment": fail})
+
+    assert run("finalize_submission")
+    with api.session_factory() as session:
+        assert session.execute(text("SELECT status FROM documents")).scalar_one() == "failed"
+        assert session.execute(text("SELECT status FROM submissions")).scalar_one() == "failed"
+        assert session.execute(text("SELECT status FROM jobs")).scalar_one() == "failed"
+        assert (
+            session.query(JobTask).filter_by(kind="finalize_submission").one().status == "succeeded"
+        )
+
+
 def test_dead_task_terminalises_file_submission_and_job(api: ApiHarness, capsys) -> None:
     clock = FrozenClock(datetime.now(UTC))
     api.app.state.clock = clock
@@ -106,7 +150,9 @@ def test_stale_running_task_is_requeued_without_spending_a_retry(api: ApiHarness
         assert claimed is not None
         session.commit()
         claimed_id = claimed.id
-        claimed.locked_at = clock.now() - timedelta(hours=1)
+        claimed.locked_at = clock.now() - timedelta(
+            seconds=api.settings.task_stale_after_seconds + 1
+        )
         session.commit()
         assert claimed.attempts == 1
 
@@ -288,7 +334,7 @@ def test_requeue_ceiling_kills_a_finalize_task_without_rearming_it(api: ApiHarne
         )
         task.status = "running"
         task.locked_by = "crashed-worker"
-        task.locked_at = clock.now() - timedelta(hours=2)
+        task.locked_at = clock.now() - timedelta(seconds=api.settings.task_stale_after_seconds + 1)
         task.attempts = 1
         task.requeues = api.settings.task_max_requeues
         session.commit()

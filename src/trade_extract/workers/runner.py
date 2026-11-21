@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 import os
+import signal
 import socket
 import time
 from collections.abc import Callable
+from threading import Timer
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session, sessionmaker
@@ -101,6 +103,7 @@ def run_once(
                 and claimed.status == "running"
                 and claimed.locked_by == claimed_owner
                 and claimed.attempts == claimed_attempt
+                and claimed.locked_at == claimed_at
             ):
                 queue_service.mark_failed(
                     session,
@@ -142,12 +145,13 @@ def run_once(
         _emit_job_result(session_factory_, completed_job)
 
     with session_factory_() as session:
-        claimed = session.get(JobTask, task_id)
+        claimed = session.get(JobTask, task_id, with_for_update=True)
         if (
             claimed is not None
             and claimed.status == "running"
             and claimed.locked_by == claimed_owner
             and claimed.attempts == claimed_attempt
+            and claimed.locked_at == claimed_at
         ):
             queue_service.mark_succeeded(session, claimed, now=clock.now())
             session.commit()
@@ -185,6 +189,14 @@ def run_forever(
     kinds = kinds or (PIPELINE_KINDS if settings.llm_classification_enabled else DEFAULT_KINDS)
     logger.info("worker_started", extra={"worker_id": worker_id, "kinds": kinds})
     while True:
+        # The OS alarm can terminate a worker blocked inside native OCR code.
+        # Docker restarts it and maintenance reclaims the abandoned task.
+        if hasattr(signal, "alarm"):
+            signal.alarm(settings.task_stale_after_seconds)
+        else:
+            watchdog = Timer(settings.task_stale_after_seconds, os._exit, args=(1,))
+            watchdog.daemon = True
+            watchdog.start()
         try:
             processed = run_once(
                 settings=settings,
@@ -199,5 +211,10 @@ def run_forever(
         except Exception:  # noqa: BLE001 - a transient claim error must not stop the loop
             logger.exception("worker_loop_error", extra={"worker_id": worker_id})
             processed = False
+        finally:
+            if hasattr(signal, "alarm"):
+                signal.alarm(0)
+            else:
+                watchdog.cancel()
         if not processed:
             time.sleep(settings.worker_poll_seconds)

@@ -457,3 +457,75 @@ def test_invoice_header_phase_shows_vision_the_full_contract_in_both_priority_mo
     assert "invoice.number" in stripped["properties"]["fields"]["properties"]
     full = _vision_contract(priority=True)
     assert "invoice.number" in full["properties"]["fields"]["properties"]
+
+
+def test_pdf_baseline_spaces_preserve_complete_evidence_line():
+    from trade_extract.services.readers.text_layer import verify_text_box
+
+    printed = "Example Industrial Supply Company"
+    page = _page([printed])
+    page = replace(
+        page,
+        characters=tuple(
+            replace(char, bbox=char.bbox.model_copy(update={"y0": 0.025, "y1": 0.02501}))
+            if char.text == " "
+            else char
+            for char in page.characters
+        ),
+    )
+    (line,) = evidence_lines((page,))
+    assert line.text == printed
+    assert verify_text_box(page, printed, line.bbox)
+
+
+@pytest.mark.parametrize("printed", ["Nov 9, 2026", "$500.00", "Company, Limited"])
+def test_pdf_low_punctuation_stays_in_its_source_line(printed):
+    page = _page([printed])
+    page = replace(
+        page,
+        characters=tuple(
+            replace(char, bbox=char.bbox.model_copy(update={"y0": 0.018, "y1": 0.02}))
+            if char.text in ",."
+            else char
+            for char in page.characters
+        ),
+    )
+    (line,) = evidence_lines((page,))
+    assert line.text == printed
+
+
+def test_invoice_balance_value_is_read_from_its_labelled_column():
+    from trade_extract.services.readers.text_layer import verify_text_box
+
+    label_page = _page(["Balance:"])
+    amount_page = _page(["$500.00"])
+    amount_page = replace(
+        amount_page,
+        characters=tuple(
+            replace(
+                char,
+                bbox=char.bbox.model_copy(
+                    update={"x0": char.bbox.x0 + 0.3, "x1": char.bbox.x1 + 0.3}
+                ),
+            )
+            for char in amount_page.characters
+        ),
+    )
+    label = evidence_lines((label_page,))[0]
+    amount = replace(evidence_lines((amount_page,))[0], evidence_id="p0l1")
+    candidates = extract_local(
+        "commercial_invoice",
+        get_schema("commercial_invoice"),
+        _source().document_hash,
+        (label, amount),
+    )
+    balance = next(c.field for c in candidates if c.field_path == "totals.payable_amount")
+    assert balance.value == "$500.00"
+    assert verify_text_box(amount_page, balance.value, balance.provenance.bbox)
+    wrong_row = replace(amount, bbox=amount.bbox.model_copy(update={"y0": 0.2, "y1": 0.22}))
+    assert not extract_local(
+        "commercial_invoice",
+        get_schema("commercial_invoice"),
+        _source().document_hash,
+        (label, wrong_row),
+    )

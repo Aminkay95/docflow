@@ -30,3 +30,6 @@ _bmad/render/
 # OS
 Thumbs.db
 .DS_Store
+
+# Local working copies
+.worktrees/

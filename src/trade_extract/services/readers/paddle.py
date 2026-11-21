@@ -183,6 +183,7 @@ class PaddleReader:
                             if _OCR_ENGINE is None:
                                 _OCR_ENGINE = PaddleOCR(
                                     device="cpu",
+                                    cpu_threads=s.ocr_cpu_threads,
                                     text_detection_model_name=s.ocr_detection_model,
                                     text_recognition_model_name=s.ocr_recognition_model,
                                     use_doc_orientation_classify=False,
@@ -201,6 +202,7 @@ class PaddleReader:
                             if _TABLE_ENGINE is None:
                                 _TABLE_ENGINE = TableRecognitionPipelineV2(
                                     device="cpu",
+                                    cpu_threads=s.ocr_cpu_threads,
                                     wired_table_structure_recognition_model_name=(
                                         s.table_wired_structure_model
                                     ),

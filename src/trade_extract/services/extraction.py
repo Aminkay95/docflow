@@ -24,7 +24,8 @@ from trade_extract.domain.readers import FieldCandidate, PageFeatures, PageInput
 from trade_extract.providers.base import ModelProvider
 from trade_extract.schemas.base import DocumentEnvelope, EnvelopeSource, TableMeta
 from trade_extract.schemas.registry import get_schema
-from trade_extract.services.digital_bill_of_lading import read_manifest
+from trade_extract.services.digital_bill_of_lading import read_manifest, read_single_container_form
+from trade_extract.services.invoice_values import normalize_invoice_field
 from trade_extract.services.local_extraction import (
     compact_evidence,
     delivery_cargo_description,
@@ -54,6 +55,7 @@ from trade_extract.services.table_layout import DigitalGrid, digital_grids
 from trade_extract.services.tables import (
     build_inventory,
     complete_wrapped_descriptions,
+    digital_cell_candidates,
     mismatched_table_columns,
     native_crops,
     reconcile,
@@ -255,8 +257,23 @@ def extract(
     )
     route_map = {r.page_index: r for r in routes}
     manifest = None
+    image_only_continuations = ()
     if (
         document_type == "bill_of_lading"
+        and settings.provider == "local"
+        and not settings.llm_extraction_priority
+        and not unreadable_errors
+        and not any(page.text.strip() for page in usable[1:])
+    ):
+        manifest = read_single_container_form(
+            usable[0], source.document_hash, settings.ocr_max_rows
+        )
+        if manifest:
+            image_only_continuations = tuple(page.page_index for page in usable[1:])
+    single_container_form = manifest is not None
+    if (
+        manifest is None
+        and document_type == "bill_of_lading"
         and len(pages) == 1
         and route_map[usable[0].page_index].readers == (ReaderKind.TEXT_LAYER,)
         and usable[0].vision_ready
@@ -310,7 +327,7 @@ def extract(
                 (perf_counter() - started) * 1000,
                 digital_ready,
             )
-        if digital_ready:
+        if digital_ready and p.page_index not in image_only_continuations:
             diagnostics.append(f"page:{p.page_index}:digital_tables_without_ocr")
         if (
             paddle is not None
@@ -343,6 +360,14 @@ def extract(
     if progress:
         progress("extracting")
     local_candidates = extract_local(document_type, spec, source.document_hash, lines)
+    if invoice:
+        local_candidates = tuple(
+            replace(candidate, field=normalize_invoice_field(candidate.field_path, candidate.field))
+            if candidate.field.value_type == ValueType.DECIMAL
+            and not candidate.field_path.endswith(".tax_rate")
+            else candidate
+            for candidate in local_candidates
+        )
     if manifest:
         local_candidates += manifest.candidates
     candidates: list[FieldCandidate] = list(local_candidates)
@@ -455,7 +480,7 @@ def extract(
         )
         for p in (*usable, *(p for p in pages if p.is_unreadable))
     )
-    if manifest:
+    if manifest and not single_container_form:
         # Form labels and logos can be raster-only even when every row is digital.
         routes = tuple(
             replace(
@@ -509,10 +534,22 @@ def extract(
         if manifest
         else build_inventory(usable, required, settings, spec, digital_layouts=digital_layouts)
     )
+    if invoice:
+        digital_candidates = digital_cell_candidates(usable, inventory, spec, source.document_hash)
+        local_candidates += digital_candidates
+        candidates.extend(digital_candidates)
+        diagnostics.extend(f"local:{candidate.field_path}" for candidate in digital_candidates)
     if manifest and settings.provider == "local" and not settings.llm_extraction_priority:
         missing = sorted(required_scalars - local_paths)
         partial = retain_partial(
-            ("digital_manifest_header_review", *(f"missing_required:{path}" for path in missing))
+            (
+                "digital_manifest_header_review",
+                *(f"missing_required:{path}" for path in missing),
+                *(
+                    f"page:{index}:image_only_continuation_requires_review"
+                    for index in image_only_continuations
+                ),
+            )
         )
         if partial is not None:
             return partial
@@ -703,7 +740,7 @@ def extract(
         )
         if phase is not None:
             phase_contract = invoice_phase_schema(document_type, phase, rows=batch_rows)
-            if settings.provider == "local" and not isinstance(reader, VisionReader):
+            if settings.provider in {"local", "groq"} and not isinstance(reader, VisionReader):
                 phase_paths = set(phase_contract["allowed_scalar_paths"])
                 if not settings.llm_extraction_priority:
                     phase_paths.difference_update(c.field_path for c in local_candidates)
@@ -864,6 +901,13 @@ def extract(
                         for path in doc.fields
                     ):
                         stage_errors.append(stage_prefix + "array_bound_reached")
+                if invoice:
+                    for path, field in doc.fields.items():
+                        if field.value_type in {
+                            ValueType.DECIMAL,
+                            ValueType.DATE,
+                        } and not path.endswith(".tax_rate"):
+                            doc.fields[path] = normalize_invoice_field(path, field)
                 documents.append(doc)
                 candidates.extend(
                     FieldCandidate(

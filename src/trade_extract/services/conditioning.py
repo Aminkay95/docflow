@@ -17,7 +17,9 @@ from trade_extract.domain.readers import TextCharacter
 from trade_extract.services.page_model import PageRendering, _encode_jpeg, _thumbnail
 
 
-def condition_page(page: PageRendering, settings: Settings) -> ConditioningResult:
+def condition_page(
+    page: PageRendering, settings: Settings, *, preserve_pdf_geometry: bool = False
+) -> ConditioningResult:
     import cv2
     import numpy as np
     from PIL import Image
@@ -135,17 +137,21 @@ def condition_page(page: PageRendering, settings: Settings) -> ConditioningResul
     retained_short = min(retained_short, *image.shape[:2])
     # Horizontal line evidence can establish small skew, but never upright vs upside-down.
     ih, iw = image.shape[:2]
-    ratio = min(1.0, settings.conditioning_analysis_max_px / max(iw, ih))
-    small = cv2.resize(image, (max(1, round(iw * ratio)), max(1, round(ih * ratio))))
-    gray = cv2.cvtColor(small, cv2.COLOR_RGB2GRAY)
-    lines = cv2.HoughLinesP(
-        cv2.Canny(gray, 50, 150),
-        1,
-        np.pi / 1800,
-        80,
-        minLineLength=max(40, gray.shape[1] // 5),
-        maxLineGap=10,
-    )
+    lines = None
+    perspective_corrected = "perspective_dark_surround" in operations
+    if not preserve_pdf_geometry or perspective_corrected:
+        if perspective_corrected:
+            ratio = min(1.0, settings.conditioning_analysis_max_px / max(iw, ih))
+            small = cv2.resize(image, (max(1, round(iw * ratio)), max(1, round(ih * ratio))))
+            gray = cv2.cvtColor(small, cv2.COLOR_RGB2GRAY)
+        lines = cv2.HoughLinesP(
+            cv2.Canny(gray, 50, 150),
+            1,
+            np.pi / 1800,
+            80,
+            minLineLength=max(40, gray.shape[1] // 5),
+            maxLineGap=10,
+        )
     angles = (
         []
         if lines is None

@@ -190,7 +190,7 @@ def render_container(
     *,
     document: str,
     dpi: int,
-    thumbnail_max_px: int,
+    thumbnail_max_px: int | None,
     quality: int,
     max_pixels: int = _MAX_IMAGE_PIXELS,
 ) -> Iterator[PageRendering]:
@@ -198,7 +198,9 @@ def render_container(
 
     PDF pages are rasterised at ``dpi`` with pypdfium2; image containers are
     decoded frame by frame with Pillow. The generator uploads nothing itself:
-    the caller stores each page before advancing, so peak memory stays at one
+    pass ``None`` for the thumbnail size when the caller will generate a
+    thumbnail from the conditioned page. The caller stores each page before
+    advancing, so peak memory stays at one
     page image plus its thumbnail. ``pypdfium2`` and Pillow are imported inside
     the functions so the API image remains reader-free.
 
@@ -293,7 +295,7 @@ def _render_pdf(
     *,
     document: str,
     dpi: int,
-    thumbnail_max_px: int,
+    thumbnail_max_px: int | None,
     quality: int,
     max_pixels: int = _MAX_IMAGE_PIXELS,
 ) -> Iterator[PageRendering]:
@@ -335,7 +337,11 @@ def _render_pdf(
                     image = bitmap.to_pil().convert("RGB")
                     width_px, height_px = image.size
                     image_bytes = _encode_jpeg(image, quality)
-                    thumbnail_bytes = _encode_jpeg(_thumbnail(image, thumbnail_max_px), quality)
+                    thumbnail_bytes = (
+                        _encode_jpeg(_thumbnail(image, thumbnail_max_px), quality)
+                        if thumbnail_max_px is not None
+                        else b""
+                    )
                 finally:
                     bitmap.close()
             finally:
@@ -364,7 +370,7 @@ def _render_image(
     *,
     document: str,
     dpi: int,
-    thumbnail_max_px: int,
+    thumbnail_max_px: int | None,
     quality: int,
     max_pixels: int = _MAX_IMAGE_PIXELS,
 ) -> Iterator[PageRendering]:
@@ -391,7 +397,11 @@ def _render_image(
                 if width_px <= 0 or height_px <= 0:
                     raise errors.processing_failed(document, "the frame has no pixels")
                 image_bytes = _encode_jpeg(frame, quality)
-                thumbnail_bytes = _encode_jpeg(_thumbnail(frame, thumbnail_max_px), quality)
+                thumbnail_bytes = (
+                    _encode_jpeg(_thumbnail(frame, thumbnail_max_px), quality)
+                    if thumbnail_max_px is not None
+                    else b""
+                )
                 yield PageRendering(
                     page_index=index,
                     image_bytes=image_bytes,

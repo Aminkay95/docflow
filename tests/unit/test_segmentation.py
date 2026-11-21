@@ -9,6 +9,7 @@ from trade_extract.services.segmentation import (
     SegmentSpec,
     classify_page,
     has_clear_segment_heading,
+    has_strong_bill_of_lading_evidence,
     layout_fingerprint,
     segment_pages,
     validate_coverage,
@@ -24,6 +25,20 @@ SAMPLES = {
     "verification_memo": "VERIFICATION MEMO\nSeal intact",
     "packing_list": "PACKING LIST\nGross weight: 18,450.00",
 }
+
+
+def test_strong_bill_of_lading_evidence_can_anchor_an_image_only_continuation():
+    text = (
+        "Shipper: Example\nConsignee: Example\nNotify party: Example\n"
+        "Port of loading\nFreight collect\nVessel\nVoyage\nSCAC\nGross weight"
+    )
+    pages = [text, ""]
+    (spec,) = segment_pages(pages)
+    assert not has_clear_segment_heading(spec, pages)
+    assert has_strong_bill_of_lading_evidence(spec, pages, 0.7)
+    assert not has_strong_bill_of_lading_evidence(spec, pages, 0.95)
+    assert not has_strong_bill_of_lading_evidence(spec, [text, SAMPLES["commercial_invoice"]], 0.7)
+    assert not has_strong_bill_of_lading_evidence(spec, ["Shipper: Example", ""], 0.7)
 
 
 @pytest.mark.parametrize(

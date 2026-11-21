@@ -45,6 +45,18 @@ def test_clean_page_quality_and_policy_are_stable():
     assert len(Image.open(io.BytesIO(result.thumbnail_bytes)).getbands()) == 3
 
 
+def test_preserving_pdf_geometry_skips_raster_skew_search(monkeypatch):
+    page = rendering(sheet())
+    settings = Settings()
+    expected = condition_page(page, settings)
+
+    def unexpected_skew_search(*args, **kwargs):
+        pytest.fail("raster skew search ran on an already aligned digital page")
+
+    monkeypatch.setattr(cv2, "HoughLinesP", unexpected_skew_search)
+    assert condition_page(page, settings, preserve_pdf_geometry=True) == expected
+
+
 @pytest.mark.parametrize(
     "orientation,expected", [(3, (650, 850)), (6, (850, 150)), (8, (150, 650))]
 )

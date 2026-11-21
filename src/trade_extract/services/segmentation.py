@@ -245,6 +245,29 @@ def has_clear_segment_heading(spec: SegmentSpec, page_texts: list[str]) -> bool:
     )
 
 
+def has_strong_bill_of_lading_evidence(
+    spec: SegmentSpec, page_texts: list[str], min_confidence: float
+) -> bool:
+    """Allow printed B/L evidence to anchor image-only continuation pages."""
+    if spec.document_type != "bill_of_lading":
+        return False
+    texts = page_texts[spec.page_start : spec.page_end + 1]
+    if not texts or not texts[0].strip():
+        return False
+    threshold = max(0.8, min_confidence)
+    for text in texts:
+        if not text.strip():
+            continue
+        result = classify_page(text, min_confidence=threshold)
+        if (
+            result.document_type != spec.document_type
+            or not result.scores
+            or result.scores[0][1] < 5.0
+        ):
+            return False
+    return True
+
+
 def segment_pages(
     page_texts: list[str] | tuple[str, ...],
     min_confidence: float = DEFAULT_MIN_CONFIDENCE,

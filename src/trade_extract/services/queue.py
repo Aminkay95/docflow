@@ -22,6 +22,33 @@ from trade_extract.services.decisions import decide_document
 from trade_extract.services.webhooks import enqueue_completion
 
 STALE_REQUEUE_LIMIT_CODE = "stale_requeue_limit"
+DOCUMENT_TASK_KINDS = ("classify_segment", "extract_segment")
+
+
+def fail_pending_document(
+    session: Session, document: Document, job: Job, *, now: datetime, code: str
+) -> None:
+    if document.status not in ("queued", "processing"):
+        return
+    document.status = "failed"
+    document.decision = "failed"
+    document.decision_reason = code
+    document.updated_at = now
+    from trade_extract.services.trust import observe
+
+    observe(session, document, now)
+    policy = session.get(Policy, job.policy_id)
+    if policy is not None:
+        decision = decide_document(
+            document_type=document.document_type,
+            status="failed",
+            checks=[],
+            policy_id=policy.id,
+            policy_version=policy.version,
+            config=policy.config,
+        )
+        decision["diagnostics"] = [code]
+        save_document(session, document, [], decision)
 
 # The only hand-written SQL outside repositories, because it is the queue contract.
 CLAIM_SQL = text(
@@ -221,35 +248,17 @@ def terminalise_dead_task(
     submission = session.get(Submission, submission_id) if submission_id else None
     if submission is None or job is None:
         return
-    if task.kind == "extract_segment" and task.document_id:
+    if task.kind in DOCUMENT_TASK_KINDS and task.document_id:
         document = session.get(Document, task.document_id)
-        if document is not None and document.status in ("queued", "processing"):
-            document.status = "failed"
-            document.decision = "failed"
-            document.decision_reason = code
-            document.updated_at = now
-            from trade_extract.services.trust import observe
-
-            observe(session, document, now)
-            policy = session.get(Policy, job.policy_id)
-            if policy:
-                decision = decide_document(
-                    document_type=document.document_type,
-                    status="failed",
-                    checks=[],
-                    policy_id=policy.id,
-                    policy_version=policy.version,
-                    config=policy.config,
-                )
-                decision["diagnostics"] = [code]
-                save_document(session, document, [], decision)
+        if document is not None:
+            fail_pending_document(session, document, job, now=now, code=code)
 
     # Completion belongs to finalization whenever extraction exists. A failed prepare
     # keeps the established immediate-failure behavior only when no extraction is active.
     from trade_extract.db.repositories import tasks as tasks_repo
 
     has_extraction = task.kind != "finalize_submission" and (
-        task.kind == "extract_segment"
+        task.kind in DOCUMENT_TASK_KINDS
         or session.scalar(
             select(Document.id).where(Document.submission_id == submission.id).limit(1)
         )
@@ -259,7 +268,7 @@ def terminalise_dead_task(
             .where(
                 JobTask.submission_id == submission.id,
                 JobTask.id != task.id,
-                JobTask.kind.in_(("prepare_file", "extract_segment")),
+                JobTask.kind.in_(("prepare_file", *DOCUMENT_TASK_KINDS)),
                 JobTask.status.in_(("queued", "running")),
             )
             .limit(1)

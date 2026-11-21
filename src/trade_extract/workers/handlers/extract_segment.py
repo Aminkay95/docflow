@@ -80,6 +80,7 @@ def source_snapshot(document: Any, pages: list[PageInput]) -> dict[str, Any]:
 
 def handle(session: Session, task: JobTask, *, settings: Settings, clock: Clock) -> None:
     task_id, owner, attempt = task.id, task.locked_by, task.attempts
+    claimed_at = task.locked_at
     document = session.get(Document, task.document_id)
     if document is None or document.status not in ("queued", "processing"):
         return
@@ -245,6 +246,7 @@ def handle(session: Session, task: JobTask, *, settings: Settings, clock: Clock)
         current_task.status != "running"
         or current_task.locked_by != owner
         or current_task.attempts != attempt
+        or current_task.locked_at != claimed_at
     ):
         return
     document = session.execute(

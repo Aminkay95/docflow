@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import io
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
@@ -74,6 +75,30 @@ def test_render_dpi_scales_the_raster(tmp_path: Path) -> None:
     assert high.width_px == low.width_px * 2
     assert high.height_px == low.height_px * 2
     assert high.dpi == 144
+
+
+@pytest.mark.parametrize(
+    ("name", "content_type", "payload"),
+    [
+        ("page.pdf", "application/pdf", make_pdf([["BILL OF LADING"]])),
+        ("pages.tiff", "image/tiff", make_multipage_tiff(2)),
+    ],
+)
+def test_skipping_intermediate_thumbnail_preserves_page(
+    tmp_path: Path, name: str, content_type: str, payload: bytes
+) -> None:
+    path = _write(tmp_path, name, payload)
+    with_thumbnails = list(
+        render_container(path, content_type, document=name, dpi=72, thumbnail_max_px=64, quality=85)
+    )
+    without_thumbnails = list(
+        render_container(
+            path, content_type, document=name, dpi=72, thumbnail_max_px=None, quality=85
+        )
+    )
+
+    assert all(page.thumbnail_bytes for page in with_thumbnails)
+    assert without_thumbnails == [replace(page, thumbnail_bytes=b"") for page in with_thumbnails]
 
 
 def test_multi_frame_tiff_renders_every_frame_without_text(tmp_path: Path) -> None:

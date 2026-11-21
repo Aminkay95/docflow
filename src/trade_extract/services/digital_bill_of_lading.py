@@ -33,6 +33,175 @@ class DigitalManifest:
     candidates: tuple[FieldCandidate, ...]
 
 
+def read_single_container_form(
+    page: PageInput, document_hash: str, row_limit: int
+) -> DigitalManifest | None:
+    """Read an ocean B/L with separate cargo totals and container details."""
+    if row_limit < 2:
+        return None
+    lines = evidence_lines((page,), preserve_text_order=True)
+
+    def find(pattern):
+        matches = [
+            (line, match) for line in lines if (match := re.fullmatch(pattern, line.text, re.I))
+        ]
+        return matches[0] if len(matches) == 1 else None
+
+    title = find(r"ocean bill of lading")
+    number = find(r"bill of lading no\.?\s*:\s*([A-Z0-9-]+)")
+    header = find(r"container details\s+no\.\s*of pcs\s+g\.weight\s+volume")
+    container = find(r"([A-Z]{4}\d{7})\s+(\d{2}'\s+[A-Z]+)")
+    totals = find(r"(\d+)\s+(packages?)\s+([\d,]+\.\d+)\s+KGS\s+([\d,]+\.\d+)\s+CBM")
+    description = find(r"STC:\s*(\S.+)")
+    if not (title and number and header and container and totals and description):
+        return None
+    # Confirm there's exactly one container reference and that the printed row
+    # aligns with its own quantities, independently of the cargo summary.
+    if sum(len(_CONTAINER.findall(line.text)) for line in lines) != 1:
+        return None
+    container_line, _ = container
+    row_matches = [
+        (line, match)
+        for line in lines
+        if line.bbox.x0 > container_line.bbox.x1
+        and abs(line.bbox.y0 - container_line.bbox.y0) <= 0.004
+        and (match := re.fullmatch(r"(\d+)\s+([\d,]+\.\d+)\s+([\d,]+\.\d+)", line.text))
+    ]
+    if (
+        len(row_matches) != 1
+        or not 0 < container_line.bbox.y0 - header[0].bbox.y0 < 0.03
+        or tuple(value.replace(",", "") for value in row_matches[0][1].groups())
+        != tuple(totals[1][i].replace(",", "") for i in (1, 3, 4))
+    ):
+        return None
+
+    candidates: list[FieldCandidate] = []
+
+    def add(path, line, start=0, end=None):
+        end = len(line.text) if end is None else end
+        box = line.box_for(start, end)
+        spec = BL_FIELD_SET.resolve(path)
+        if box is None or spec is None:
+            return None
+        value = line.text[start:end]
+        candidates.append(
+            FieldCandidate(
+                path,
+                Field(
+                    kind="scalar",
+                    value=value,
+                    raw_text=value,
+                    value_type=spec.value_type,
+                    agreement=Agreement.SINGLE_READER,
+                    provenance=Provenance(
+                        page_index=page.page_index,
+                        page_number=page.page_index + 1,
+                        bbox=box,
+                        coordinate_space=CoordinateSpace.NORMALIZED_TOP_LEFT,
+                        reader=ReaderKind.TEXT_LAYER,
+                        reader_version=_VERSION,
+                        model=_VERSION,
+                        document_hash=document_hash,
+                    ),
+                ),
+            )
+        )
+        return box
+
+    def capture(path, match_pair, group):
+        line, match = match_pair
+        return add(path, line, *match.span(group))
+
+    capture("bl.number", number, 1)
+    for label, path in (
+        ("shipper", "shipper.name"),
+        ("consignee", "consignee.name"),
+        ("notify address", "notify_party.name"),
+        ("port of loading", "routing.port_of_loading"),
+        ("port of discharge", "routing.port_of_discharge"),
+        ("ocean vessel", "vessel.name"),
+    ):
+        anchor = find(label)
+        if anchor is None:
+            return None
+        header_box = anchor[0].bbox
+        values = sorted(
+            (
+                line
+                for line in lines
+                if abs(line.bbox.x0 - header_box.x0) < 0.015
+                and 0.004 < line.bbox.y0 - header_box.y0 < 0.04
+            ),
+            key=lambda line: line.bbox.y0,
+        )
+        if not values:
+            return None
+        value = values[0]
+        if path == "vessel.name" and (split := re.fullmatch(r"(.+)/([A-Z0-9-]+)", value.text)):
+            capture(path, (value, split), 1)
+            capture("voyage.number", (value, split), 2)
+        else:
+            add(path, value)
+        if label in ("shipper", "consignee", "notify address") and len(values) > 1:
+            add(path.replace(".name", ".address.line1"), values[1])
+
+    if shipped := find(r"shipped on board\s*:\s*(\d{2}-\d{2}-\d{4})"):
+        capture("dates.shipped_on_board", shipped, 1)
+    freight = next((line for line in lines if line.text.casefold() == "freight prepaid"), None)
+    if freight is not None and not any(line.text.casefold() == "freight collect" for line in lines):
+        add("freight.terms", freight, len("freight "))
+    if originals := find(r"(\d+)\s*\([A-Z]+\)"):
+        capture("bl.original_count", originals, 1)
+    if draft := find("draft"):
+        add("bl.form", draft[0])
+
+    rows = []
+    for name, fields in (
+        (
+            "containers",
+            (
+                ("number", container, 1),
+                ("type", container, 2),
+                ("package_count", row_matches[0], 1),
+                ("gross_weight_kg", row_matches[0], 2),
+                ("volume_m3", row_matches[0], 3),
+            ),
+        ),
+        (
+            "line_items",
+            (
+                ("description", description, 1),
+                ("package_count", totals, 1),
+                ("package_type", totals, 2),
+                ("gross_weight_kg", totals, 3),
+                ("volume_m3", totals, 4),
+            ),
+        ),
+    ):
+        columns = []
+        for key, match_pair, group in fields:
+            box = capture(f"{name}[0].{key}", match_pair, group)
+            if box is None:
+                return None
+            columns.append((key, box))
+        rows.append(
+            InventoryRow(
+                name,
+                0,
+                page.page_index,
+                "digital-single-container",
+                BBox(
+                    x0=min(box.x0 for _, box in columns),
+                    y0=min(box.y0 for _, box in columns),
+                    x1=max(box.x1 for _, box in columns),
+                    y1=max(box.y1 for _, box in columns),
+                ),
+                tuple(columns),
+            )
+        )
+    return DigitalManifest(TableInventory(tuple(rows)), tuple(candidates))
+
+
 def read_manifest(page: PageInput, document_hash: str, row_limit: int) -> DigitalManifest | None:
     """Recognize a narrow form layout with a numbered manifest and shared STC block."""
     lines = sorted(evidence_lines((page,), preserve_text_order=True), key=lambda line: line.bbox.y0)

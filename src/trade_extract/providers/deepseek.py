@@ -143,7 +143,10 @@ class DeepSeekProvider:
                     raise
                 except (OSError, ValueError, Image.DecompressionBombError):
                     raise ProviderError("image_format_error") from None
-        compact_local = local and request.schema_json.get("contract") == "evidence_values_v1"
+        compact_local = (
+            self.name in {"local", "groq"}
+            and request.schema_json.get("contract") == "evidence_values_v1"
+        )
         evidence = (
             _compact_local_evidence(
                 request.evidence,
@@ -153,7 +156,12 @@ class DeepSeekProvider:
             if compact_local
             else request.evidence
         )
-        if local and request.stage == "classify":
+        if self.name == "groq" and compact_local:
+            cited = tuple(_CITED_LINE.finditer(request.evidence))
+            if cited:
+                # Keep geometry so separate label/value columns stay associated.
+                evidence = "\n".join(match.group(0) for match in cited)
+        if self.name in {"local", "groq"} and request.stage == "classify":
             evidence = _classification_excerpt(evidence)
         content: list[dict[str, object]] = [{"type": "text", "text": evidence}]
         if request.repair_errors:
@@ -184,7 +192,7 @@ class DeepSeekProvider:
             request.max_output_tokens or self.settings.provider_max_output_tokens,
         )
         prompt = prompt_for(request)
-        if local and request.stage == "classify":
+        if self.name in {"local", "groq"} and request.stage == "classify":
             prompt = json.dumps(
                 {
                     "instruction": (
@@ -210,7 +218,20 @@ class DeepSeekProvider:
             # Indexed paths are already enforced by the server's response grammar.
             # Show one representative path per field to preserve its meaning.
             path_examples = dict.fromkeys(re.sub(r"\[\d+\]", "[0]", path) for path in allowed_paths)
-            prompt += " Field paths: " + ", ".join(path_examples)
+            if self.name == "groq" and request.schema_json.get("phase") == "header_party":
+                prompt += (
+                    " Read seller and buyer names and addresses from their own party blocks. "
+                    "Bank beneficiary, bank country and bank address are payment details. "
+                    "Never assign those bank details to a buyer or seller. "
+                    "Use the printed coordinates to associate labels and values across columns. "
+                    "Use the Date label for issue date and Due Date for due date. "
+                    "Copy printed date strings. Each value must be a substring of its cited line."
+                )
+            prompt += " Field paths: " + ", ".join(
+                allowed_paths if self.name == "groq" else path_examples
+            )
+        if self.name == "groq":
+            max_output_tokens = min(max_output_tokens, self.settings.groq_max_output_tokens)
         if "json" not in prompt.lower():
             # DeepSeek rejects response_format=json_object unless the prompt names it.
             prompt = f"{prompt}\nReturn a single JSON object."
@@ -218,14 +239,20 @@ class DeepSeekProvider:
         # the Latin-heavy trade corpus. The hard character cap below remains the
         # allocation boundary; live usage is recorded for evaluation.
         estimated_input_tokens = (len(prompt) + len(evidence) + 3) // 4
+        if self.name == "groq":
+            estimated_input_tokens += 2048 * len(request.pages)
         input_limit = (
             self.settings.provider_max_estimated_input_tokens_per_page * request.page_count
         )
         if estimated_input_tokens > input_limit:
             raise ProviderError("provider_input_budget_exhausted")
+        input_price = self.settings.provider_input_price_usd_per_million
+        output_price = self.settings.provider_output_price_usd_per_million
+        if self.name == "groq":
+            input_price = self.settings.groq_input_price_usd_per_million
+            output_price = self.settings.groq_output_price_usd_per_million
         estimated_cost = (
-            estimated_input_tokens * self.settings.provider_input_price_usd_per_million
-            + max_output_tokens * self.settings.provider_output_price_usd_per_million
+            estimated_input_tokens * input_price + max_output_tokens * output_price
         ) / 1_000_000
         if not local and estimated_cost > (
             self.settings.provider_cost_safety_ceiling_usd_per_page * request.page_count
@@ -253,15 +280,26 @@ class DeepSeekProvider:
                     "type": "json_object",
                     "schema": request.schema_json["output"],
                 }
-        else:
+        elif self.name == "groq" and model.startswith("qwen/"):
+            body["reasoning_effort"] = "none"
+        elif self.name == "deepseek":
             body["thinking"] = {"type": "disabled"}
+        if self.name == "groq" and request.pages:
+            encoded_size = len(json.dumps(body, ensure_ascii=False).encode("utf-8"))
+            if encoded_size > 20_000_000:
+                raise ProviderError("image_limit_error")
         base_url, headers, timeout = self._transport_options()
-        digest = hashlib.sha256(prompt.encode()).hexdigest() if local else prompt_hash(request)
+        digest = (
+            hashlib.sha256(prompt.encode()).hexdigest()
+            if local or compact_local
+            else prompt_hash(request)
+        )
         for attempt in range(1, self.settings.provider_max_attempts + 1):
             started = time.monotonic()
             result: ProviderResult | None = None
             error: ProviderError | None = None
             usage_tokens = (0, 0, 0)
+            retry_after = 0.0
             try:
                 response = self.client.post(
                     base_url.rstrip("/") + "/chat/completions",
@@ -281,6 +319,11 @@ class DeepSeekProvider:
                             "model": model,
                         },
                     )
+                    if self.name == "groq" and response.status_code == 429:
+                        try:
+                            retry_after = max(0.0, float(response.headers.get("retry-after", "0")))
+                        except ValueError:
+                            retry_after = 0.0
                     error = ProviderError(
                         f"http_{response.status_code}",
                         retryable=(response.status_code == 429 or response.status_code >= 500),
@@ -341,7 +384,10 @@ class DeepSeekProvider:
             if not error.retryable or attempt == self.settings.provider_max_attempts:
                 raise error from None
             self.sleep(
-                min(self.settings.provider_backoff_max_seconds, 2 ** (attempt - 1) + self.jitter())
+                min(
+                    self.settings.provider_backoff_max_seconds,
+                    max(retry_after, 2 ** (attempt - 1) + self.jitter()),
+                )
             )
         raise AssertionError("unreachable")
 

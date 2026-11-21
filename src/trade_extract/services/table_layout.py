@@ -152,6 +152,9 @@ def digital_grids(page: PageInput, spec: SchemaSpec, row_limit: int) -> tuple[Di
             continue
         matches = []
         for name, aliases in alias_maps.items():
+            if name == "line_items" and _normal(line.text) == "item quantity rate amount":
+                # This four-column header uses Item for the goods description.
+                aliases = {**aliases, "item": "description", "rate": "unit_price"}
             columns = _header(line, aliases)
             keys = [key for key, _ in columns if key is not None]
             if len(keys) < 2 or len(set(keys)) != len(keys):

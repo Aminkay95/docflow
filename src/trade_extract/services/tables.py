@@ -9,10 +9,11 @@ from collections import defaultdict
 from collections.abc import Mapping
 
 from trade_extract.config import Settings
-from trade_extract.domain.fields import Field
+from trade_extract.domain.fields import Agreement, Field
 from trade_extract.domain.inference import PageImage
-from trade_extract.domain.provenance import BBox, ReaderKind
+from trade_extract.domain.provenance import BBox, CoordinateSpace, Provenance, ReaderKind
 from trade_extract.domain.readers import (
+    FieldCandidate,
     InventoryRow,
     NativeCrop,
     PageInput,
@@ -323,3 +324,55 @@ def native_crops(
                     )
                 )
     return tuple(output)
+
+
+def digital_cell_candidates(
+    pages: tuple[PageInput, ...],
+    inventory: TableInventory,
+    spec: SchemaSpec,
+    document_hash: str,
+) -> tuple[FieldCandidate, ...]:
+    """Read cells from independently verified digital column rectangles."""
+    from trade_extract.services.invoice_values import normalize_invoice_field
+    from trade_extract.services.readers.paddle import contains
+    from trade_extract.services.readers.text_layer import verify_text_box
+
+    by_page = {page.page_index: page for page in pages}
+    candidates = []
+    for row in inventory.rows:
+        if not row.region_id.startswith("digital-"):
+            continue
+        page = by_page[row.page_index]
+        for key, cell in row.columns:
+            path = f"{row.table_name}[{row.row_index}].{key}"
+            field_spec = spec.model.field_set.resolve(path)
+            chars = tuple(char for char in page.characters if contains(cell, char.bbox))
+            glyphs = tuple(char for char in chars if char.text.strip())
+            value = "".join(char.text for char in chars).strip()
+            if field_spec is None or not glyphs or not value:
+                continue
+            box = BBox(
+                x0=min(char.bbox.x0 for char in glyphs),
+                y0=min(char.bbox.y0 for char in glyphs),
+                x1=max(char.bbox.x1 for char in glyphs),
+                y1=max(char.bbox.y1 for char in glyphs),
+            )
+            if not verify_text_box(page, value, box):
+                continue
+            field = Field(
+                kind="scalar",
+                value=value,
+                raw_text=value,
+                value_type=field_spec.value_type,
+                agreement=Agreement.SINGLE_READER,
+                provenance=Provenance(
+                    page_index=page.page_index,
+                    bbox=box,
+                    coordinate_space=CoordinateSpace.NORMALIZED_TOP_LEFT,
+                    reader=ReaderKind.TEXT_LAYER,
+                    reader_version="digital-cell-v1",
+                    document_hash=document_hash,
+                ),
+            )
+            candidates.append(FieldCandidate(path, normalize_invoice_field(path, field)))
+    return tuple(candidates)

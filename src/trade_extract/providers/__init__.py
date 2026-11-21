@@ -15,4 +15,8 @@ def make_provider(settings: Settings, *, recorder: AttemptRecorder | None = None
         raise ValueError("live_provider_requires_recorder")
     if settings.provider == "local":
         return LocalModelProvider(settings, recorder=recorder)
+    if settings.provider == "groq":
+        from trade_extract.providers.groq import GroqProvider
+
+        return GroqProvider(settings, recorder=recorder)
     return DeepSeekProvider(settings, recorder=recorder)

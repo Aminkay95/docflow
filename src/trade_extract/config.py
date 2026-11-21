@@ -67,10 +67,17 @@ class Settings(BaseSettings):
     password_reset_ttl_minutes: int = Field(default=30, ge=5, le=1440)
     password_reset_min_length: int = Field(default=12, ge=8, le=128)
 
-    provider: Literal["mock", "deepseek", "local"] = "mock"
+    provider: Literal["mock", "deepseek", "local", "groq"] = "mock"
     local_model_base_url: str = "http://127.0.0.1:8080/v1"
     local_model_name: str = "qwen3.5-4b"
-    local_model_timeout_seconds: float = Field(default=900, gt=0)
+    local_model_timeout_seconds: float = Field(default=60, gt=0)
+    groq_max_output_tokens: int = Field(default=900, ge=128, le=65536)
+    groq_api_key: SecretStr = SecretStr("")
+    groq_input_price_usd_per_million: float = Field(default=0.80, ge=0, le=100)
+    groq_output_price_usd_per_million: float = Field(default=4.00, ge=0, le=100)
+    groq_base_url: str = "https://api.groq.com/openai/v1"
+    groq_text_model: str = Field(default="qwen/qwen3.8-27b", min_length=1)
+    groq_vision_model: str = Field(default="qwen/qwen3.8-27b", min_length=1)
     deepseek_api_key: SecretStr = SecretStr("")
     deepseek_base_url: str = "https://api.deepseek.com"
     deepseek_vision_model: Literal["deepseek-flash"] = "deepseek-flash"
@@ -100,6 +107,7 @@ class Settings(BaseSettings):
     ocr_max_rows: int = Field(default=2000, ge=1)
     ocr_max_cells: int = Field(default=20000, ge=1)
     ocr_max_html_bytes: int = Field(default=1000000, ge=1)
+    ocr_cpu_threads: int = Field(default=2, ge=1)
     ocr_detection_model: str = Field(default="PP-OCRv5_mobile_det", min_length=1)
     ocr_recognition_model: str = Field(default="PP-OCRv5_mobile_rec", min_length=1)
     table_wired_structure_model: str = Field(default="SLANet_plus", min_length=1)
@@ -154,7 +162,7 @@ class Settings(BaseSettings):
     # candidates still merge in as corroboration (agreement/disagreement).
     llm_extraction_priority: bool = False
 
-    task_stale_after_seconds: int = Field(default=900, ge=1)
+    task_stale_after_seconds: int = Field(default=300, ge=1)
     task_max_requeues: int = Field(default=3, ge=1)
     task_backoff_base_seconds: int = Field(default=2, ge=1)
     task_backoff_max_seconds: int = Field(default=300, ge=1)
@@ -182,6 +190,10 @@ class Settings(BaseSettings):
             )
         if self.provider == "deepseek" and not self.deepseek_api_key.get_secret_value().strip():
             raise ValueError("DEEPSEEK_API_KEY is required when PROVIDER=deepseek")
+        if self.provider == "groq" and not self.groq_api_key.get_secret_value().strip():
+            raise ValueError("GROQ_API_KEY is required when PROVIDER=groq")
+        if not self.groq_base_url.startswith("https://"):
+            raise ValueError("GROQ_BASE_URL must use HTTPS")
         if not self.deepseek_base_url.startswith("https://"):
             raise ValueError("DEEPSEEK_BASE_URL must use HTTPS")
         if self.max_request_bytes == 0:

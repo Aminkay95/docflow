@@ -254,6 +254,7 @@ def test_runtime_stages_mobile_ocr_and_lazy_table_recognition(monkeypatch):
     )
 
     settings = Settings(
+        ocr_cpu_threads=3,
         ocr_detection_model="custom-mobile-det",
         ocr_recognition_model="custom-mobile-rec",
         table_wired_structure_model="custom-wired",
@@ -269,9 +270,11 @@ def test_runtime_stages_mobile_ocr_and_lazy_table_recognition(monkeypatch):
     assert structured.structure_status == "ok"
     assert options["ocr_calls"] == 1 and options["table_calls"] == 1
     assert options["ocr"]["text_detection_model_name"] == "custom-mobile-det"
+    assert options["ocr"]["cpu_threads"] == 3
     assert options["ocr"]["text_recognition_model_name"] == "custom-mobile-rec"
     assert options["table"] == {
         "device": "cpu",
+        "cpu_threads": 3,
         "wired_table_structure_recognition_model_name": "custom-wired",
         "wireless_table_structure_recognition_model_name": "custom-wireless",
         "text_detection_model_name": "custom-mobile-det",

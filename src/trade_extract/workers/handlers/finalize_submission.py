@@ -20,6 +20,7 @@ from trade_extract.domain.checks import CHECK_VERSION
 from trade_extract.domain.clock import Clock
 from trade_extract.services.conflicts import detect_conflicts
 from trade_extract.services.decisions import effective_policy
+from trade_extract.services.queue import DOCUMENT_TASK_KINDS, fail_pending_document
 from trade_extract.services.webhooks import enqueue_completion
 
 
@@ -75,6 +76,28 @@ def handle(
         )
     )
     current_documents = [d for d in all_documents if d.submission_id == submission.id]
+    pending = {d.id: d for d in all_documents if d.status in ("queued", "processing")}
+    if pending:
+        # Older workers could leave a document pending after its final attempt died.
+        work = session.scalars(
+            select(JobTask)
+            .where(
+                JobTask.document_id.in_(pending),
+                JobTask.kind.in_(DOCUMENT_TASK_KINDS),
+                JobTask.status.in_(("queued", "running", "dead")),
+            )
+            .order_by(JobTask.finished_at.desc().nulls_last(), JobTask.id)
+        ).all()
+        active = {entry.document_id for entry in work if entry.status != "dead"}
+        for entry in work:
+            if entry.status == "dead" and entry.document_id not in active:
+                fail_pending_document(
+                    session,
+                    pending[entry.document_id],
+                    job,
+                    now=now,
+                    code=entry.last_error_code or "extraction_failed",
+                )
     if any(d.status in ("queued", "processing") for d in all_documents):
         _rearm(task, now=now, poll_seconds=settings.worker_poll_seconds)
         return
@@ -112,7 +135,7 @@ def handle(
             code=(failed[0].error_code or "file_failed") if failed else "extraction_failed",
             message=(failed[0].error_message or f"Document {failed[0].filename} failed to process.")
             if failed
-            else "Invoice extraction failed; retained diagnostics require review.",
+            else "Document processing failed; retained diagnostics require review.",
         )
     else:
         submissions_repo.mark_completed(session, submission, now=now)
@@ -144,7 +167,9 @@ def handle(
     )
 
     if submissions_repo.active_count_for_job(session, job.id) == 0:
-        if reasons:
+        if any_document_failed or failed:
+            jobs_repo.mark_failed(session, job, now=now)
+        elif reasons:
             job.status = "review_required"
             job.terminal_at = None
             job.terminal_reason = None

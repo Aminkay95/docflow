@@ -6,6 +6,7 @@ import shutil
 import tempfile
 from dataclasses import dataclass
 from pathlib import Path
+from time import perf_counter
 from typing import Any
 
 from sqlalchemy.orm import Session
@@ -26,6 +27,8 @@ from trade_extract.domain import errors
 from trade_extract.domain.clock import Clock
 from trade_extract.domain.hashing import document_hash, document_idempotency_key
 from trade_extract.domain.ids import new_id
+from trade_extract.domain.readers import PageInput
+from trade_extract.logging import get_logger
 from trade_extract.services.conditioning import condition_page, diagnostics
 from trade_extract.services.digital_bill_of_lading import read_manifest
 from trade_extract.services.page_model import IMAGE_CONTENT_TYPE, render_container
@@ -33,6 +36,7 @@ from trade_extract.services.progress import report
 from trade_extract.services.segmentation import (
     SegmentSpec,
     has_clear_segment_heading,
+    has_strong_bill_of_lading_evidence,
     segment_pages,
 )
 from trade_extract.services.storage import (
@@ -42,6 +46,8 @@ from trade_extract.services.storage import (
     page_thumbnail_key,
 )
 from trade_extract.workers.handlers.extract_segment import rehydrate
+
+logger = get_logger(__name__)
 
 
 @dataclass(frozen=True)
@@ -87,16 +93,35 @@ def _render_and_store(
     temp_path: Path,
 ) -> list[_StoredPage]:
     stored: list[_StoredPage] = []
+    render_started = perf_counter()
     for rendering in render_container(
         temp_path,
         file_row.content_type,
         document=file_row.filename,
         dpi=settings.page_render_dpi,
-        thumbnail_max_px=settings.page_thumbnail_max_px,
+        thumbnail_max_px=None,
         quality=settings.page_image_quality,
         max_pixels=settings.conditioning_max_pixels,
     ):
-        result = condition_page(rendering, settings)
+        rendered_at = perf_counter()
+        # A complete embedded manifest already establishes the table's geometry.
+        # Raster template lines can be skewed independently of the embedded text.
+        preserve_pdf_geometry = (
+            file_row.content_type == "application/pdf"
+            and file_row.page_count == 1
+            and settings.provider == "local"
+            and settings.local_classification_fast_path
+            and not settings.llm_extraction_priority
+            and bool(rendering.characters)
+            and read_manifest(
+                PageInput(rendering.page_index, characters=rendering.characters),
+                f"sha256:{file_row.sha256}",
+                settings.ocr_max_rows,
+            )
+            is not None
+        )
+        result = condition_page(rendering, settings, preserve_pdf_geometry=preserve_pdf_geometry)
+        conditioned_at = perf_counter()
         image_key = page_image_key(
             client_id=file_row.client_id,
             job_id=file_row.job_id,
@@ -113,6 +138,18 @@ def _render_and_store(
         # leaves at most orphan objects, never a half-written page set.
         storage.put(image_key, io.BytesIO(result.image_bytes), IMAGE_CONTENT_TYPE)
         storage.put(thumbnail_key, io.BytesIO(result.thumbnail_bytes), IMAGE_CONTENT_TYPE)
+        images_stored_at = perf_counter()
+        logger.info(
+            "prepare_file_page",
+            extra={
+                "file_id": file_row.id,
+                "page_index": rendering.page_index,
+                "preserve_pdf_geometry": preserve_pdf_geometry,
+                "render_ms": round((rendered_at - render_started) * 1000, 1),
+                "condition_ms": round((conditioned_at - rendered_at) * 1000, 1),
+                "image_store_ms": round((images_stored_at - conditioned_at) * 1000, 1),
+            },
+        )
         stored.append(
             _StoredPage(
                 page_index=rendering.page_index,
@@ -130,6 +167,7 @@ def _render_and_store(
                 legibility_score=result.score,
             )
         )
+        render_started = perf_counter()
     return stored
 
 
@@ -177,7 +215,15 @@ def handle(
     storage = build_storage(settings)
     temp_path: Path | None = None
     try:
+        read_started = perf_counter()
         temp_path = _download_source(storage, file_row)
+        logger.info(
+            "prepare_file_source",
+            extra={
+                "file_id": file_row.id,
+                "source_read_ms": round((perf_counter() - read_started) * 1000, 1),
+            },
+        )
         stored_pages = _render_and_store(storage, file_row, settings=settings, temp_path=temp_path)
     except errors.DomainError:
         raise
@@ -299,6 +345,12 @@ def handle(
         )
         use_local_route = settings.local_classification_fast_path and (
             (spec.document_type in DOCUMENT_SCHEMAS and has_clear_segment_heading(spec, page_texts))
+            or (
+                settings.provider == "local"
+                and has_strong_bill_of_lading_evidence(
+                    spec, page_texts, settings.segmentation_min_confidence
+                )
+            )
             or local_manifest
             or (settings.provider != "mock" and not any(text.strip() for text in segment_texts))
         )
