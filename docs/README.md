@@ -1,6 +1,6 @@
-# Trade Extract — Design Documentation
+# Doc Hover — Design Documentation
 
-Trade Extract is a provenance-first, asynchronous extraction API for Kenyan trade documents.
+Doc Hover is a provenance-first, asynchronous extraction API for Kenyan trade documents.
 A caller submits a group of one or more files under an optional opaque `job_ref`; the service
 splits every file into document segments, extracts **stated** values with page and bounding-box
 provenance, runs deterministic checks, reports cross-document conflicts, and decides whether the

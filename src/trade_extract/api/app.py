@@ -8,13 +8,13 @@ from pathlib import Path
 from threading import Lock
 
 from fastapi import FastAPI, Request
-from fastapi.responses import RedirectResponse
+from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 
 from trade_extract.api import openapi as openapi_module
 from trade_extract.api.errors import register_exception_handlers
 from trade_extract.api.middleware import RequestContextMiddleware
-from trade_extract.api.routes import email_webhook, extract, health, jobs, results
+from trade_extract.api.routes import email_webhook, extract, health, jobs, results, workspace
 from trade_extract.config import Settings, get_settings
 from trade_extract.db.session import make_engine, session_factory
 from trade_extract.domain.clock import Clock, SystemClock
@@ -57,7 +57,7 @@ def create_app(
             engine.dispose()
 
     app = FastAPI(
-        title="Trade Extract API",
+        title="Doc Hover API",
         version="1.0.0",
         lifespan=lifespan,
         docs_url="/docs",
@@ -84,28 +84,27 @@ def create_app(
     app.include_router(email_webhook.router, prefix="/v1")
 
     app.include_router(review_routes.router)
+    app.include_router(workspace.router)
     app.mount(
         "/review/static",
         StaticFiles(directory=str(Path(__file__).parents[1] / "review" / "static")),
         name="review-static",
     )
 
-    @app.get("/", include_in_schema=False)
-    def home(request: Request) -> RedirectResponse:
-        try:
-            signer(request).loads(request.cookies.get("review_session", ""), max_age=28800)
-            target = "/review"
-        except Exception:
-            target = "/review/login"
-        return RedirectResponse(target, status_code=303)
+    @app.get("/", response_class=HTMLResponse, include_in_schema=False)
+    def home(request: Request) -> HTMLResponse:
+        return review_routes.templates.TemplateResponse(request=request, name="product.html")
 
     @app.middleware("http")
     async def review_security(request: Request, call_next):
         response = await call_next(request)
-        if request.url.path.startswith("/review"):
+        path = request.url.path
+        is_private = path == "/workspace" or path.startswith(("/workspace/", "/review"))
+        if is_private or path == "/":
+            if is_private:
+                response.headers["Cache-Control"] = "no-store"
             response.headers.update(
                 {
-                    "Cache-Control": "no-store",
                     "X-Frame-Options": "DENY",
                     "Referrer-Policy": "no-referrer",
                     "X-Content-Type-Options": "nosniff",

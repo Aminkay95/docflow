@@ -10,6 +10,7 @@ from sqlalchemy import (
     Integer,
     Numeric,
     Text,
+    UniqueConstraint,
     func,
     text,
 )
@@ -21,6 +22,7 @@ from trade_extract.db.base import Base
 class Segment(Base):
     __tablename__ = "segments"
     __table_args__ = (
+        UniqueConstraint("id", "file_id", name="uq_segments_id_file"),
         CheckConstraint("page_start >= 0", name="ck_segments_page_start"),
         CheckConstraint("page_end >= page_start", name="ck_segments_page_end"),
         CheckConstraint(

@@ -5,6 +5,7 @@ import math
 from collections.abc import Iterator
 from dataclasses import dataclass, field
 from pathlib import Path
+from threading import Lock
 from typing import Any
 
 from trade_extract.domain import errors
@@ -17,6 +18,8 @@ _MAX_IMAGE_PIXELS = 100_000_000
 #: Stored page images are JPEG so the quality knob has an effect; PNG has no quality.
 IMAGE_CONTENT_TYPE = "image/jpeg"
 _PDF_POINTS_PER_INCH = 72.0
+# PDFium is process-global and cannot be called concurrently from threads.
+_pdfium_lock = Lock()
 
 
 @dataclass(frozen=True)
@@ -72,6 +75,11 @@ def probe_container(
     from every page: the caller rejects the file at no extra parsing cost.
     """
 
+    with _pdfium_lock:
+        return _probe_pdf(path, document=document, page_limit=page_limit)
+
+
+def _probe_pdf(path: str | Path, *, document: str, page_limit: int | None) -> ContainerProbe:
     import pypdfium2 as pdfium
 
     path = Path(path)
@@ -209,14 +217,15 @@ def render_container(
     """
 
     if content_type == "application/pdf":
-        yield from _render_pdf(
-            path,
-            document=document,
-            dpi=dpi,
-            thumbnail_max_px=thumbnail_max_px,
-            quality=quality,
-            max_pixels=max_pixels,
-        )
+        with _pdfium_lock:
+            yield from _render_pdf(
+                path,
+                document=document,
+                dpi=dpi,
+                thumbnail_max_px=thumbnail_max_px,
+                quality=quality,
+                max_pixels=max_pixels,
+            )
         return
     yield from _render_image(
         path,

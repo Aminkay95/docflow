@@ -1,0 +1,188 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Extract shipment data from bills of lading, invoices, and customs entries. Review the source and send structured results to your systems.">
+  <title>Doc Hover | Document processing for freight and customs</title>
+  <link rel="icon" href="/review/static/doc-hover-mark.png" type="image/png">
+  <link rel="stylesheet" href="/review/static/landing.css">
+  <script src="/review/static/landing.js" defer></script>
+</head>
+<body>
+  <a class="skip-link" href="#main">Skip to content</a>
+  <header class="site-header">
+    <div class="wrap header-inner">
+      <a class="wordmark" href="/">
+        {% include "partials/brand_logo.html" %}
+      </a>
+      <nav aria-label="Main navigation">
+        <a class="section-link" href="#demo">Sample extraction</a>
+        <a class="section-link" href="#documents">Documents</a>
+        <a href="/docs">API docs</a>
+        <a class="button button-outline" href="/review/login">Sign in</a>
+      </nav>
+    </div>
+  </header>
+
+  <main id="main">
+    <section class="hero wrap" aria-labelledby="hero-heading">
+      <div class="hero-content">
+        <p class="eyebrow">For freight and customs teams</p>
+        <h1 id="hero-heading">Stop retyping shipment data.</h1>
+        <p class="hero-description">Doc Hover reads bills of lading, invoices, and customs entries. Check the extracted fields against the original, then send the data to the systems you already use.</p>
+        <div class="actions">
+          <a class="button button-primary" href="#demo">See a sample extraction</a>
+          <a class="button button-outline" href="/docs">Read the API docs</a>
+        </div>
+      </div>
+      <div class="hero-photo">
+        <img src="/review/static/shipment-paperwork.webp" alt="A freight clerk holds her head as she reviews a form beside stacks of shipment paperwork" width="1280" height="1024" fetchpriority="high">
+      </div>
+    </section>
+
+    {% set samples = [
+      {
+        "id": "bol",
+        "type": "Bill of lading",
+        "filename": "BL-MBA-0426.pdf",
+        "issuer": "Bluewater Lines",
+        "reference": "BL-MBA-0426",
+        "fields": [
+          {"label": "Bill of lading number", "value": "BL-MBA-0426"},
+          {"label": "Consignee", "value": "Coastline Imports Ltd"},
+          {"label": "Port of discharge", "value": "Mombasa, Kenya"},
+          {"label": "Container number", "value": "TLLU 418207 6"},
+          {"label": "Container seal", "value": "SL-674820", "review": true}
+        ]
+      },
+      {
+        "id": "invoice",
+        "type": "Commercial invoice",
+        "filename": "INV-1268.pdf",
+        "issuer": "Ridgeline Parts Co.",
+        "reference": "INV-1268",
+        "fields": [
+          {"label": "Invoice number", "value": "INV-1268"},
+          {"label": "Buyer", "value": "Coastline Imports Ltd"},
+          {"label": "Issue date", "value": "18 Nov 2026"},
+          {"label": "Currency", "value": "USD"},
+          {"label": "Amount payable", "value": "12,480.00"}
+        ]
+      },
+      {
+        "id": "customs",
+        "type": "Customs entry",
+        "filename": "ENTRY-001284.pdf",
+        "issuer": "Import declaration",
+        "reference": "ENTRY-001284",
+        "fields": [
+          {"label": "Declaration number", "value": "ENTRY-001284"},
+          {"label": "Importer", "value": "Coastline Imports Ltd"},
+          {"label": "Customs office", "value": "Mombasa"},
+          {"label": "Bill of lading number", "value": "BL-MBA-0426"},
+          {"label": "HS code", "value": "8431.20", "review": true}
+        ]
+      }
+    ] %}
+
+    <section class="demo-section" id="demo" aria-labelledby="demo-heading">
+      <div class="wrap">
+        <div class="section-intro">
+          <h2 id="demo-heading">See where each field came from.</h2>
+          <p>Choose a sample document, then select an extracted field to find it on the source page.</p>
+        </div>
+        <fieldset class="demo">
+          <legend class="sr-only">Choose a sample document</legend>
+          <div class="sample-options">
+            {% for sample in samples %}
+            <label class="sample-option">
+              <input class="sr-only" type="radio" name="sample" value="{{ sample.id }}" aria-controls="panel-{{ sample.id }}"{% if loop.first %} checked{% endif %}>
+              <span>{{ sample.type }}</span>
+            </label>
+            {% endfor %}
+          </div>
+          {% for sample in samples %}
+          <section class="sample-panel" id="panel-{{ sample.id }}" aria-label="{{ sample.type }} extraction example">
+            <div class="viewer-header">
+              <span class="file-icon" aria-hidden="true"></span>
+              <strong>{{ sample.filename }}</strong>
+              <span class="sample-note">Sample document</span>
+            </div>
+            <div class="viewer-body">
+              <div class="source-view">
+                <article class="source-paper" aria-label="Source document">
+                  <header class="paper-header">
+                    <div>
+                      <p>{{ sample.issuer }}</p>
+                      <h3>{{ sample.type }}</h3>
+                    </div>
+                    <span>{{ sample.reference }}</span>
+                  </header>
+                  <dl class="source-fields">
+                    {% for field in sample.fields %}
+                    <div>
+                      <dt>{{ field.label }}</dt>
+                      <dd><mark id="source-{{ sample.id }}-{{ loop.index }}" class="source-value{% if loop.first %} is-active{% endif %}">{{ field.value }}</mark></dd>
+                    </div>
+                    {% endfor %}
+                  </dl>
+                </article>
+                <span class="page-number">Page 1 of 1</span>
+              </div>
+              <div class="extracted-view">
+                <h3>Extracted fields</h3>
+                <ul class="extracted-fields">
+                  {% for field in sample.fields %}
+                  <li>
+                    <button class="field-button" type="button" aria-controls="source-{{ sample.id }}-{{ loop.index }}" aria-pressed="{{ 'true' if loop.first else 'false' }}" data-source="source-{{ sample.id }}-{{ loop.index }}">
+                      <span class="field-label">{{ field.label }}</span>
+                      <strong>{{ field.value }}</strong>
+                      {% if field.review %}<span class="review-status">Needs review</span>{% endif %}
+                    </button>
+                  </li>
+                  {% endfor %}
+                </ul>
+              </div>
+            </div>
+          </section>
+          {% endfor %}
+        </fieldset>
+      </div>
+    </section>
+
+    <section class="documents wrap" id="documents" aria-labelledby="documents-heading">
+      <div class="section-intro">
+        <h2 id="documents-heading">The paperwork that moves freight.</h2>
+        <p>Upload PDFs or images on their own, or group documents for the same shipment under one job reference.</p>
+      </div>
+      <ul class="document-types">
+        <li>Bill of lading</li>
+        <li>Commercial invoice</li>
+        <li>Proforma invoice</li>
+        <li>Customs entry</li>
+        <li>Delivery order</li>
+        <li>Port pass</li>
+        <li>Verification memo</li>
+      </ul>
+    </section>
+
+    <section class="integration">
+      <div class="wrap integration-inner">
+        <div>
+          <h2>Send results to your systems.</h2>
+          <p>Submit documents through the API, retrieve structured JSON, and subscribe to webhook notifications for completed results.</p>
+        </div>
+        <a class="button button-light" href="/docs">Explore the API</a>
+      </div>
+    </section>
+  </main>
+
+  <footer class="wrap site-footer">
+    <a class="wordmark" href="/">
+      {% include "partials/brand_logo.html" %}
+    </a>
+    <nav aria-label="Footer"><a href="/docs">API docs</a><a href="/review/login">Sign in</a></nav>
+  </footer>
+</body>
+</html>

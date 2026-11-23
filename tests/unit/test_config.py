@@ -54,6 +54,7 @@ def test_production_accepts_real_secrets(tmp_path: Path) -> None:
         environment="production",
         secret_key="a-real-production-secret",
         api_key_pepper="a-real-production-pepper",
+        smtp_host="smtp.example.test",
     )
     assert settings.require_https_webhooks is True
 

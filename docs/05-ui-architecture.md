@@ -133,7 +133,7 @@ than a broken image.
 
 ```text
 ┌──────────────────────────────────────────────────────────────────────────────┐
-│ Trade Extract Review                    Reviewer: A. Mwangi   [Logout]       │
+│ Doc Hover Review                    Reviewer: A. Mwangi   [Logout]       │
 ├──────────────────────────────────────────────────────────────────────────────┤
 │  EXTRACTION REVIEW (our error)          CONFLICT REVIEW (client decision)     │
 │  ┌──────────────────────────────┐       ┌──────────────────────────────┐      │

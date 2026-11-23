@@ -269,27 +269,19 @@ ul, ol { margin: 0; padding: 0; list-style: none; }
 
 .brand {
   display: flex;
-  align-items: center;
-  gap: 8px;
+  flex-direction: column;
+  align-items: flex-start;
   min-width: 0;
   color: var(--ink-gray-8);
 }
 .brand:hover { color: var(--ink-gray-8); }
-.brand-mark {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 28px;
-  height: 28px;
+.brand-logo {
+  display: block;
+  width: auto;
+  height: 30px;
   flex: 0 0 auto;
-  border-radius: var(--radius-3);
-  background: var(--surface-gray-10);
-  color: var(--ink-base);
-  box-shadow: var(--elevation-sm);
 }
-.brand-copy { display: flex; flex-direction: column; min-width: 0; line-height: 1.15; }
-.brand-title { font-size: 13px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.brand-subtitle { margin-top: 2px; color: var(--ink-gray-5); font-size: 11px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.brand-subtitle { margin-inline-start: 35px; color: var(--ink-gray-5); font-size: 11px; line-height: 1.15; }
 
 .sidebar-collapse { flex: 0 0 auto; margin-left: auto; }
 .when-collapsed { display: none; }
@@ -1692,7 +1684,7 @@ pre {
   box-shadow: var(--elevation-md);
 }
 .login-card-compact { padding: 26px; }
-.login-brand { display: inline-flex; align-items: center; gap: 8px; margin-bottom: 24px; color: var(--ink-gray-8); }
+.login-brand { display: inline-flex; flex-direction: column; align-items: flex-start; margin-bottom: 24px; color: var(--ink-gray-8); }
 .login-brand:hover { color: var(--ink-gray-8); }
 .login-heading h1 { color: var(--ink-gray-9); font-size: 22px; font-weight: 600; letter-spacing: -0.015em; }
 .login-lead { margin-top: 5px; color: var(--ink-gray-5); font-size: 13px; line-height: 1.5; }

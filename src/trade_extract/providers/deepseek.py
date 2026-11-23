@@ -315,7 +315,6 @@ class DeepSeekProvider:
                         "provider_http_error",
                         extra={
                             "status": response.status_code,
-                            "error_detail": response.text[:1000],
                             "model": model,
                         },
                     )

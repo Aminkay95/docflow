@@ -1,0 +1,130 @@
+# Run this file on its own. DATABASE_URL must point to a private PostgreSQL service.
+x-common: &common
+  ENVIRONMENT: production
+  DATABASE_URL: ${DATABASE_URL:?Set DATABASE_URL}
+  SECRET_KEY: ${SECRET_KEY:?Set SECRET_KEY}
+  API_KEY_PEPPER: ${API_KEY_PEPPER:?Set API_KEY_PEPPER}
+  BASE_URL: ${BASE_URL:?Set the public HTTPS URL}
+  STORAGE_BACKEND: s3
+  S3_BUCKET: ${S3_BUCKET:?Set the private object storage bucket}
+  S3_ENDPOINT_URL: ${S3_ENDPOINT_URL:-}
+  S3_REGION: ${S3_REGION:-}
+  AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID:-}
+  AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY:-}
+  AWS_SESSION_TOKEN: ${AWS_SESSION_TOKEN:-}
+  RESEND_API_KEY: ${RESEND_API_KEY:-}
+  RESEND_FROM: ${RESEND_FROM:-}
+  SMTP_HOST: ${SMTP_HOST:-}
+  SMTP_PORT: ${SMTP_PORT:-587}
+  SMTP_USERNAME: ${SMTP_USERNAME:-}
+  SMTP_PASSWORD: ${SMTP_PASSWORD:-}
+  SMTP_FROM: ${SMTP_FROM:-Doc Hover <no-reply@localhost>}
+  EMAIL_INTAKE_ADDRESS: ${EMAIL_INTAKE_ADDRESS:-}
+  EMAIL_INTAKE_CLIENT_SLUG: ${EMAIL_INTAKE_CLIENT_SLUG:-}
+  EMAIL_INTAKE_WEBHOOK_SECRET: ${EMAIL_INTAKE_WEBHOOK_SECRET:-}
+  WEBHOOK_ALLOW_PRIVATE_TARGETS: "false"
+  MAX_FILE_BYTES: ${MAX_FILE_BYTES:-26214400}
+  MAX_DOCUMENTS_PER_GROUP: ${MAX_DOCUMENTS_PER_GROUP:-10}
+  MAX_REQUEST_BYTES: ${MAX_REQUEST_BYTES:-104857600}
+  MAX_PAGES_PER_FILE: ${MAX_PAGES_PER_FILE:-20}
+  MAX_PAGES_PER_SUBMISSION: ${MAX_PAGES_PER_SUBMISSION:-50}
+  DATABASE_POOL_SIZE: ${DATABASE_POOL_SIZE:-3}
+  DATABASE_POOL_MAX_OVERFLOW: ${DATABASE_POOL_MAX_OVERFLOW:-2}
+  DOCUMENT_RETENTION_HOURS: ${DOCUMENT_RETENTION_HOURS:-6}
+  RETENTION_SWEEP_SECONDS: ${RETENTION_SWEEP_SECONDS:-300}
+  PRODUCTION_AUTO_PASS: ${PRODUCTION_AUTO_PASS:-false}
+
+x-runtime: &runtime
+  restart: unless-stopped
+  init: true
+  stop_grace_period: 130s
+  security_opt: [no-new-privileges:true]
+  cap_drop: [ALL]
+
+services:
+  migrate:
+    image: ${API_IMAGE:?Set the release API image}
+    environment: *common
+    command: ["sh", "-c", "alembic upgrade head && python scripts/bootstrap.py"]
+    restart: "no"
+
+  api:
+    <<: *runtime
+    image: ${API_IMAGE:?Set the release API image}
+    environment:
+      <<: *common
+      FORWARDED_ALLOW_IPS: ${FORWARDED_ALLOW_IPS:-127.0.0.1}
+    command: ["uvicorn", "trade_extract.api.app:create_app", "--factory", "--host", "0.0.0.0", "--port", "8000", "--no-access-log"]
+    ports: ["127.0.0.1:${API_HOST_PORT:-8000}:8000"]
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/v1/health/ready', timeout=15)"]
+      interval: 30s
+      timeout: 17s
+      retries: 3
+
+  worker:
+    <<: *runtime
+    image: ${WORKER_IMAGE:?Set the release worker image}
+    environment:
+      <<: *common
+      PROVIDER: ${PROVIDER:?Choose a real extraction provider}
+      DEEPSEEK_API_KEY: ${DEEPSEEK_API_KEY:-}
+      DEEPSEEK_BASE_URL: ${DEEPSEEK_BASE_URL:-https://api.deepseek.com}
+      DEEPSEEK_TEXT_MODEL: ${DEEPSEEK_TEXT_MODEL:-deepseek-v4-pro}
+      DEEPSEEK_VISION_MODEL: ${DEEPSEEK_VISION_MODEL:-deepseek-flash}
+      GROQ_MAX_OUTPUT_TOKENS: ${GROQ_MAX_OUTPUT_TOKENS:-900}
+      GROQ_API_KEY: ${GROQ_API_KEY:-}
+      GROQ_BASE_URL: ${GROQ_BASE_URL:-https://api.groq.com/openai/v1}
+      GROQ_TEXT_MODEL: ${GROQ_TEXT_MODEL:-qwen/qwen3.8-27b}
+      GROQ_VISION_MODEL: ${GROQ_VISION_MODEL:-qwen/qwen3.8-27b}
+      LOCAL_MODEL_BASE_URL: ${LOCAL_MODEL_BASE_URL:-http://model:8080/v1}
+      LOCAL_MODEL_NAME: ${LOCAL_MODEL_NAME:-qwen3.5-4b}
+      LOCAL_MODEL_TIMEOUT_SECONDS: ${LOCAL_MODEL_TIMEOUT_SECONDS:-60}
+      OCR_CPU_THREADS: ${OCR_CPU_THREADS:-2}
+      OCR_DETECTION_MODEL: ${OCR_DETECTION_MODEL:-PP-OCRv5_mobile_det}
+      OCR_RECOGNITION_MODEL: ${OCR_RECOGNITION_MODEL:-PP-OCRv5_mobile_rec}
+      TABLE_WIRED_STRUCTURE_MODEL: ${TABLE_WIRED_STRUCTURE_MODEL:-SLANet_plus}
+      TABLE_WIRELESS_STRUCTURE_MODEL: ${TABLE_WIRELESS_STRUCTURE_MODEL:-SLANet_plus}
+      PADDLE_PDX_DISABLE_MODEL_SOURCE_CHECK: ${PADDLE_PDX_DISABLE_MODEL_SOURCE_CHECK:-true}
+      LLM_CLASSIFICATION_ENABLED: ${LLM_CLASSIFICATION_ENABLED:-true}
+      LOCAL_CLASSIFICATION_FAST_PATH: ${LOCAL_CLASSIFICATION_FAST_PATH:-true}
+      STAGE_PROMPTS_ENABLED: ${STAGE_PROMPTS_ENABLED:-true}
+      LLM_EXTRACTION_PRIORITY: ${LLM_EXTRACTION_PRIORITY:-false}
+      PROVIDER_TIMEOUT_SECONDS: ${PROVIDER_TIMEOUT_SECONDS:-30}
+      PROVIDER_CONNECT_TIMEOUT_SECONDS: ${PROVIDER_CONNECT_TIMEOUT_SECONDS:-5}
+      PROVIDER_BACKOFF_MAX_SECONDS: ${PROVIDER_BACKOFF_MAX_SECONDS:-30}
+      PROVIDER_MAX_OUTPUT_TOKENS: ${PROVIDER_MAX_OUTPUT_TOKENS:-8192}
+      PROVIDER_MAX_ATTEMPTS: ${PROVIDER_MAX_ATTEMPTS:-2}
+      PROVIDER_MAX_REPAIRS: ${PROVIDER_MAX_REPAIRS:-1}
+      PROVIDER_MAX_CALLS_PER_PAGE: ${PROVIDER_MAX_CALLS_PER_PAGE:-40}
+      PROVIDER_MAX_EVIDENCE_CHARACTERS_PER_PAGE: ${PROVIDER_MAX_EVIDENCE_CHARACTERS_PER_PAGE:-24000}
+      PROVIDER_MAX_ESTIMATED_INPUT_TOKENS_PER_PAGE: ${PROVIDER_MAX_ESTIMATED_INPUT_TOKENS_PER_PAGE:-12000}
+      PROVIDER_COST_TARGET_USD_PER_PAGE: ${PROVIDER_COST_TARGET_USD_PER_PAGE:-0.04}
+      PROVIDER_COST_SAFETY_CEILING_USD_PER_PAGE: ${PROVIDER_COST_SAFETY_CEILING_USD_PER_PAGE:-0.12}
+      GROQ_INPUT_PRICE_USD_PER_MILLION: ${GROQ_INPUT_PRICE_USD_PER_MILLION:-0.80}
+      GROQ_OUTPUT_PRICE_USD_PER_MILLION: ${GROQ_OUTPUT_PRICE_USD_PER_MILLION:-4.00}
+    volumes: [paddlex_cache:/home/appuser/.paddlex]
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    deploy:
+      replicas: ${EXTRACTION_WORKER_REPLICAS:-10}
+      resources:
+        limits:
+          cpus: "2"
+          memory: 4g
+
+  maintenance:
+    <<: *runtime
+    image: ${WORKER_IMAGE:?Set the release worker image}
+    command: ["python", "-m", "trade_extract.workers.maintenance"]
+    environment: *common
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+
+volumes:
+  paddlex_cache:

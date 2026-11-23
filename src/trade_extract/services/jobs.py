@@ -65,7 +65,9 @@ def read_job(session: Session, job_id: str, client_id: str) -> dict[str, Any]:
     if job is None:
         raise errors.job_not_found()
     documents = session.scalars(
-        select(Document).where(Document.job_id == job.id).order_by(Document.created_at, Document.id)
+        select(Document)
+        .where(Document.job_id == job.id, Document.client_id == client_id)
+        .order_by(Document.created_at, Document.id)
     ).all()
     policy = session.get(Policy, job.policy_id)
     if policy is None:
@@ -117,7 +119,13 @@ def read_document(session: Session, document_id: str, client_id: str) -> dict[st
     )
     if document is None:
         raise errors.DomainError("document_not_found", "Document not found.", http_status=404)
-    submission = session.get(Submission, document.submission_id)
+    submission = session.scalar(
+        select(Submission).where(
+            Submission.id == document.submission_id,
+            Submission.job_id == document.job_id,
+            Submission.client_id == client_id,
+        )
+    )
     if submission is None:
         raise errors.result_not_found()
     return build_result(session, submission, document_id=document_id)["documents"][0]

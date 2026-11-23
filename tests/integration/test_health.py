@@ -4,6 +4,7 @@ import pytest
 from sqlalchemy import text
 
 from tests.integration.conftest import ApiHarness
+from trade_extract.api.routes.health import REQUIRED_DATABASE_REVISION
 
 pytestmark = pytest.mark.integration
 
@@ -34,6 +35,27 @@ def test_readiness_is_503_without_an_active_policy(api: ApiHarness) -> None:
     error = response.json()["error"]
     assert error["code"] == "service_unavailable"
     assert "policy" in error["message"]
+
+
+def test_readiness_is_503_until_the_database_has_the_required_revision(api: ApiHarness) -> None:
+    with api.session_factory.begin() as session:
+        session.execute(
+            text("UPDATE alembic_version SET version_num = :revision"),
+            {"revision": "0008_inbound_email"},
+        )
+    try:
+        response = api.client.get("/v1/health/ready")
+        assert response.status_code == 503
+        assert response.json()["error"]["code"] == "service_unavailable"
+        assert "migration" in response.json()["error"]["message"]
+        assert api.client.get("/v1/health").status_code == 200
+    finally:
+        with api.session_factory.begin() as session:
+            session.execute(
+                text("UPDATE alembic_version SET version_num = :revision"),
+                {"revision": REQUIRED_DATABASE_REVISION},
+            )
+    assert api.client.get("/v1/health/ready").status_code == 200
 
 
 def test_expired_key_is_401(api: ApiHarness) -> None:

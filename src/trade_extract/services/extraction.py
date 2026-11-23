@@ -23,11 +23,14 @@ from trade_extract.domain.provenance import BBox, Provenance, ReaderKind
 from trade_extract.domain.readers import FieldCandidate, PageFeatures, PageInput, TableInventory
 from trade_extract.providers.base import ModelProvider
 from trade_extract.schemas.base import DocumentEnvelope, EnvelopeSource, TableMeta
+from trade_extract.schemas.invoice import CommercialInvoice
 from trade_extract.schemas.registry import get_schema
+from trade_extract.services.checks import run_invoice_checks
 from trade_extract.services.digital_bill_of_lading import read_manifest, read_single_container_form
 from trade_extract.services.invoice_values import normalize_invoice_field
 from trade_extract.services.local_extraction import (
     compact_evidence,
+    complete_digital_invoice_text,
     delivery_cargo_description,
     delivery_number_matches_label,
     evidence_lines,
@@ -257,7 +260,7 @@ def extract(
     )
     route_map = {r.page_index: r for r in routes}
     manifest = None
-    image_only_continuations = ()
+    image_only_continuations: tuple[int, ...] = ()
     if (
         document_type == "bill_of_lading"
         and settings.provider == "local"
@@ -539,6 +542,62 @@ def extract(
         local_candidates += digital_candidates
         candidates.extend(digital_candidates)
         diagnostics.extend(f"local:{candidate.field_path}" for candidate in digital_candidates)
+    if (
+        document_type == "commercial_invoice"
+        and source.content_type == "application/pdf"
+        and source.page_start == source.page_end
+        and len(usable) == 1
+        and not unreadable_errors
+        and not settings.llm_extraction_priority
+        and digital_layouts.get(usable[0].page_index)
+        and (required_scalars | {"totals.tax_amount"}) <= local_paths
+        and inventory.rows
+        and not inventory.diagnostics
+        and all(
+            row.table_name == "line_items"
+            and row.region_id == "digital-line_items"
+            and required_columns["line_items"].issubset(dict(row.columns))
+            for row in inventory.rows
+        )
+    ):
+        fields = merge_candidates(local_candidates, select=select)
+        tables = {
+            "line_items": TableMeta(
+                columns=table_columns("line_items"),
+                row_count_stated=len(inventory.rows),
+                row_count_extracted=len(inventory.rows),
+            )
+        }
+        if (
+            all(
+                f"line_items[{row.row_index}].{key}" in fields
+                for row in inventory.rows
+                for key, _ in row.columns
+            )
+            and not reconcile(inventory, fields, tables)
+            and complete_digital_invoice_text(lines, fields)
+        ):
+            try:
+                local_document = CommercialInvoice.model_validate(
+                    {
+                        "segment_id": segment_id,
+                        "status": DocumentStatus.EXTRACTED,
+                        "source": source,
+                        "fields": fields,
+                        "tables": tables,
+                        "extension": {},
+                    }
+                )
+            except ValidationError:
+                diagnostics.append("local_schema_incomplete")
+            else:
+                if _comparison(fields["totals.line_extension_amount"]) == _comparison(
+                    fields["totals.tax_exclusive_amount"]
+                ) and all(check.status != "fail" for check in run_invoice_checks(local_document)):
+                    diagnostics.append("provider_skipped_local_complete_invoice")
+                    return outcome(
+                        "extracted", document=local_document, candidates=local_candidates
+                    )
     if manifest and settings.provider == "local" and not settings.llm_extraction_priority:
         missing = sorted(required_scalars - local_paths)
         partial = retain_partial(

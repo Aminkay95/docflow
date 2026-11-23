@@ -25,7 +25,7 @@ x-app-env: &app-env
   SMTP_PORT: ${SMTP_PORT:-587}
   SMTP_USERNAME: ${SMTP_USERNAME:-}
   SMTP_PASSWORD: ${SMTP_PASSWORD:-}
-  SMTP_FROM: "${SMTP_FROM:-Trade Extract <no-reply@localhost>}"
+  SMTP_FROM: "${SMTP_FROM:-Doc Hover <no-reply@localhost>}"
   SMTP_STARTTLS: ${SMTP_STARTTLS:-true}
   MAIL_OUTBOX_DIR: /app/var/outbox
   PASSWORD_RESET_TTL_MINUTES: ${PASSWORD_RESET_TTL_MINUTES:-30}

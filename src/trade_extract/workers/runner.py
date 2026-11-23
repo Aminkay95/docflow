@@ -3,9 +3,8 @@ from __future__ import annotations
 import os
 import signal
 import socket
-import time
 from collections.abc import Callable
-from threading import Timer
+from threading import Event, Timer
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session, sessionmaker
@@ -132,7 +131,7 @@ def run_once(
                     if job is not None and submission is not None and submission.status == "failed":
                         failed_job = (job.id, job.client_id)
                 session.commit()
-        if failed_job is not None:
+        if failed_job is not None and settings.environment != "production":
             _emit_job_result(session_factory_, failed_job)
         logger.warning(
             "task_failed",
@@ -140,7 +139,7 @@ def run_once(
         )
         return True
 
-    if completed_job is not None:
+    if completed_job is not None and settings.environment != "production":
         # Output happens only after the result transaction has committed.
         _emit_job_result(session_factory_, completed_job)
 
@@ -180,6 +179,7 @@ def run_forever(
     clock: Clock | None = None,
     worker_id: str | None = None,
     kinds: list[str] | None = None,
+    stop: Event | None = None,
 ) -> None:
     configure_logging()
     clock = clock or SystemClock()
@@ -188,7 +188,8 @@ def run_forever(
     # LLM classification stage is enabled, or those jobs stall forever.
     kinds = kinds or (PIPELINE_KINDS if settings.llm_classification_enabled else DEFAULT_KINDS)
     logger.info("worker_started", extra={"worker_id": worker_id, "kinds": kinds})
-    while True:
+    stop = stop or Event()
+    while not stop.is_set():
         # The OS alarm can terminate a worker blocked inside native OCR code.
         # Docker restarts it and maintenance reclaims the abandoned task.
         if hasattr(signal, "alarm"):
@@ -217,4 +218,5 @@ def run_forever(
             else:
                 watchdog.cancel()
         if not processed:
-            time.sleep(settings.worker_poll_seconds)
+            stop.wait(settings.worker_poll_seconds)
+    logger.info("worker_stopped", extra={"worker_id": worker_id})

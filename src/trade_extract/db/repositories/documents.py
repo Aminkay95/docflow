@@ -67,7 +67,12 @@ def list_for_submission(
     stmt = (
         select(Document, Segment, File)
         .join(Segment, Document.segment_id == Segment.id)
-        .join(File, Document.file_id == File.id)
+        .join(
+            File,
+            (Document.file_id == File.id)
+            & (Document.client_id == File.client_id)
+            & (Document.job_id == File.job_id),
+        )
         .where(Document.submission_id == submission_id)
         .order_by(File.created_at, Document.page_start, Document.id)
     )

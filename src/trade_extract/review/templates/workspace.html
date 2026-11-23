@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{{ client_name }} | Doc Hover</title>
+  <link rel="icon" href="/review/static/doc-hover-mark.png" type="image/png">
+  <link rel="stylesheet" href="/review/static/product.css">
+  <script src="/review/static/review.js" defer></script>
+</head>
+<body class="workspace">
+  <header class="site-header wrap">
+    <a class="wordmark" href="/">{% include "partials/brand_logo.html" %}</a>
+    <button class="button secondary" type="button" data-post="/review/logout">Sign out</button>
+  </header>
+  <main class="wrap">
+    <input type="hidden" id="csrf" value="{{ csrf }}">
+    <span class="kicker">Client workspace</span><h1>{{ client_name }}</h1>
+    {% if job %}
+    <p><a href="/workspace">All jobs</a></p>
+    <section class="workspace-card">
+      <h2>{{ job.job_ref or job.job_id }}</h2>
+      <p>Status <strong>{{ job.status | replace('_', ' ') | capitalize }}</strong></p>
+      {% if job.status in ('queued', 'processing', 'review_required') %}<p><a href="/workspace/jobs/{{ job.job_id }}">Refresh status</a></p>{% endif %}
+      <h3>Documents</h3>
+      <ul class="document-list">
+        {% for item in job.documents %}
+        <li><a href="/workspace/documents/{{ item.document_id }}">{{ item.document_type | replace('_', ' ') | capitalize }} JSON</a><span>{{ item.status | replace('_', ' ') | capitalize }}</span></li>
+        {% else %}<li>Documents will appear here when processing begins.</li>{% endfor %}
+      </ul>
+    </section>
+    {% else %}
+    <section class="workspace-card"><h2>Upload documents</h2>
+      <form action="/workspace/jobs" method="post" enctype="multipart/form-data" data-upload>
+        <label>Documents <input type="file" name="documents" accept=".pdf,.jpg,.jpeg,.png,.webp,.tiff,.tif" multiple required></label>
+        <label>Job reference <input type="text" name="job_ref" maxlength="128" placeholder="Optional"></label>
+        <button class="button" type="submit" data-submit><span>Start extraction</span></button>
+        <p data-upload-status role="status"></p><noscript>Enable JavaScript to submit documents from the workspace.</noscript>
+      </form>
+    </section>
+    <section class="workspace-card"><h2>Recent jobs</h2>
+      <ul class="document-list">
+        {% for item in jobs %}
+        <li><a href="/workspace/jobs/{{ item.id }}">{{ item.job_ref or item.id }}</a><span>{{ item.status | replace('_', ' ') | capitalize }}</span></li>
+        {% else %}<li>Your extraction jobs will appear here.</li>{% endfor %}
+      </ul>
+      {% if next_page %}<a href="/workspace?before={{ next_page }}">Older jobs</a>{% endif %}
+    </section>
+    {% endif %}
+  </main>
+</body>
+</html>

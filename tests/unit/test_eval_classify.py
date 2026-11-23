@@ -56,28 +56,27 @@ def test_offline_head_to_head_report_metrics():
     )
     assert report["mode"] == "mock"
     assert report["samples"] == 16
-    # Scripted verdicts are correct by construction; the lexicon misses do-01
-    # (delivery order citing its B/L number near-ties the title) and wins the rest.
-    assert report["lexicon"]["hits"] == 15
-    assert report["lexicon"]["accuracy"] == 0.9375
+    # The explicit Delivery Order title wins over the B/L reference in do-01.
+    assert report["lexicon"]["hits"] == 16
+    assert report["lexicon"]["accuracy"] == 1.0
     assert report["llm"]["hits"] == 16
     assert report["llm"]["accuracy"] == 1.0
     assert report["llm"]["errors"] == 0
-    # do-01, unk-01, unk-02, edge-tie-01 route to review under both systems.
-    assert report["lexicon"]["reviews"] == 4
+    assert report["lexicon"]["reviews"] == 3
     assert report["llm"]["reviews"] == 4
 
 
 def test_disagreement_is_one_real_routing_conflict():
     _, samples, verdicts = load_fixtures()
+    verdicts["do-01"]["document_type"] = "unknown"
     report = eval_classify.run(
         "synthetic", samples, verdicts, settings=eval_settings(), allow_live=False
     )
     disagreements = report["agreement"]["disagreements"]
     assert [row["id"] for row in disagreements] == ["do-01"]
     assert disagreements[0]["expected"] == "delivery_order"
-    assert disagreements[0]["lexicon"] == "unknown"
-    assert disagreements[0]["llm"] == "delivery_order"
+    assert disagreements[0]["lexicon"] == "delivery_order"
+    assert disagreements[0]["llm"] == "unknown"
     assert report["agreement"]["count"] == 15
     # pack-01 (packing_list vs unknown) is not a conflict: both route to review.
     assert all(row["id"] != "pack-01" for row in disagreements)

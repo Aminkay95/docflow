@@ -22,7 +22,7 @@ The architecture optimises for three things, in order:
 flowchart LR
     Client["Client system\n(clearing agent / TMS)"]
     Reviewer["Reviewer\n(internal operations)"]
-    API["Trade Extract API\nFastAPI"]
+    API["Doc Hover API\nFastAPI"]
     Worker["Extraction worker\nPaddleOCR + OpenCV + pypdfium2"]
     DB[("PostgreSQL 16\nstate + queue")]
     Store[("Object storage\nS3/R2 or filesystem")]

@@ -123,7 +123,7 @@ test('Done sends CSRF and displays returned reviewed JSON', async () => {
   assert.equal(page.requests[0].url, '/review/jobs/job_done/done');
   assert.equal(page.requests[0].options.headers['X-CSRF-Token'], 'review-csrf');
   assert.deepEqual(JSON.parse(page.preview.textContent), result);
-  assert.match(page.status.textContent, /sent to the API terminal/);
+  assert.match(page.status.textContent, /Reviewed JSON is ready/);
   assert.equal(page.button.disabled, true);
 });
 
@@ -142,7 +142,7 @@ function workspaceBrowser(box = null, confirm = () => false) {
   const requests = [];
   const overlay = {hidden: true, style: {}};
   const imageEvents = {};
-  const error = {hidden: true};
+  const error = {hidden: true, querySelector: () => null};
   const figure = {id: 'page-0', querySelector: selector => selector === '.bbox' ? overlay : error};
   const image = {hidden: false, addEventListener: (type, callback) => imageEvents[type] = callback,
     closest: () => figure};
@@ -284,7 +284,7 @@ function progressBrowser(fetcher, initialProcessing = true) {
 
 const progressResult = overrides => ({
   processing: true, state: 'processing', title: 'Extracting fields', updated_at: new Date().toISOString(),
-  terminal_at: null, documents_ready: 0, documents: 1, fields: 0, reviews: 0,
+  terminal_at: null, steps: [], steps_completed: 0, documents_ready: 0, documents: 1, fields: 0, reviews: 0,
   files: [{name: 'invoice.pdf', status: 'processing'}],
   stages: [{label: 'Extracting fields', status: 'active', at: new Date().toISOString()}],
   version: 'initial', ...overrides,

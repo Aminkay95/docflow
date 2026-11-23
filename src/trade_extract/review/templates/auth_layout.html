@@ -5,7 +5,8 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="color-scheme" content="light">
-<title>{{ title }} · Trade Extract</title>
+<title>{{ title }} · Doc Hover</title>
+<link rel="icon" href="/review/static/doc-hover-mark.png" type="image/png">
 <link rel="stylesheet" href="/review/static/review.css">
 </head>
 <body class="login-body login-body-split">
@@ -13,12 +14,9 @@
 <main class="login-split">
   <section class="login-panel">
     <div class="login-panel-inner">
-      <a class="login-brand" href="/review" title="Trade Extract">
-        <span class="brand-mark" aria-hidden="true">{{ icon('file-text', 16) }}</span>
-        <span class="brand-copy">
-          <span class="brand-title">Trade Extract</span>
-          <span class="brand-subtitle">Review console</span>
-        </span>
+      <a class="login-brand" href="/review" title="Doc Hover">
+        {% include "partials/brand_logo.html" %}
+        <span class="brand-subtitle">Review console</span>
       </a>
       {% block auth_content %}{% endblock %}
     </div>

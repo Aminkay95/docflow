@@ -207,7 +207,12 @@ def conflicts_for(
     if ids:
         for source in session.scalars(
             select(ConflictSource)
-            .where(ConflictSource.conflict_id.in_(ids))
+            .join(Document, Document.id == ConflictSource.document_id)
+            .where(
+                ConflictSource.conflict_id.in_(ids),
+                Document.client_id == client_id,
+                Document.job_id == job_id,
+            )
             .order_by(ConflictSource.document_id, ConflictSource.field_path)
         ):
             sources[source.conflict_id].append(source.evidence)

@@ -19,7 +19,11 @@ from trade_extract.domain.ids import new_id
 def build_policy_config(settings: Settings) -> dict[str, object]:
     from trade_extract.domain.policy import GatePolicy
 
-    return GatePolicy(invoice_pass_enabled=True, review_depth="checks").model_dump(mode="json")
+    allow_pass = settings.environment != "production" or settings.production_auto_pass
+    return GatePolicy(
+        invoice_pass_enabled=allow_pass,
+        review_depth="checks" if allow_pass else "full",
+    ).model_dump(mode="json")
 
 
 def main() -> int:

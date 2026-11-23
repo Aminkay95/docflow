@@ -50,6 +50,7 @@ def fail_pending_document(
         decision["diagnostics"] = [code]
         save_document(session, document, [], decision)
 
+
 # The only hand-written SQL outside repositories, because it is the queue contract.
 CLAIM_SQL = text(
     """

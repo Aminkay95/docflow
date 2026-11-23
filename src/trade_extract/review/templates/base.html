@@ -5,7 +5,8 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="color-scheme" content="light">
-<title>{{ title }} · Trade Extract</title>
+<title>{{ title }} · Doc Hover</title>
+<link rel="icon" href="/review/static/doc-hover-mark.png" type="image/png">
 <link rel="stylesheet" href="/review/static/review.css">
 <script src="/review/static/review.js" defer></script>
 </head>
@@ -27,12 +28,9 @@
   <div class="sidebar-backdrop" data-sidebar-close aria-hidden="true"></div>
   <aside class="sidebar" id="app-sidebar" data-sidebar aria-label="Application">
     <div class="sidebar-header">
-      <a class="brand" href="/review" title="Trade Extract — Review console">
-        <span class="brand-mark" aria-hidden="true">{{ icon('file-text', 16) }}</span>
-        <span class="brand-copy">
-          <span class="brand-title">Trade Extract</span>
-          <span class="brand-subtitle">Review console</span>
-        </span>
+      <a class="brand" href="/review" title="Doc Hover — Review console">
+        {% include "partials/brand_logo.html" %}
+        <span class="brand-subtitle">Review console</span>
       </a>
       <button class="icon-btn sidebar-collapse" type="button" data-sidebar-collapse aria-label="Collapse sidebar" title="Collapse sidebar">
         <span class="when-expanded">{{ icon('panel-left-close', 16) }}</span>

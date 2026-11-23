@@ -10,6 +10,7 @@ from itsdangerous import BadSignature, URLSafeTimedSerializer
 from sqlalchemy.orm import Session
 
 from trade_extract.api.deps import get_session
+from trade_extract.db.models.client import Client
 from trade_extract.db.models.reviewer import Reviewer
 
 
@@ -36,7 +37,7 @@ def signer(request: Request) -> URLSafeTimedSerializer:
     return URLSafeTimedSerializer(request.app.state.settings.secret_key, salt="review-v1")
 
 
-def principal(request: Request, session: Session = Depends(get_session)) -> Reviewer:
+def session_principal(request: Request, session: Session = Depends(get_session)) -> Reviewer:
     try:
         data: dict[str, Any] = signer(request).loads(
             request.cookies.get("review_session", ""), max_age=28800
@@ -47,7 +48,7 @@ def principal(request: Request, session: Session = Depends(get_session)) -> Revi
         if now - data["issued"] > 28800 or now - data["seen"] > 1800:
             raise ValueError("expired")
         reviewer = session.get(Reviewer, data["id"])
-        if reviewer is None or not reviewer.is_active or reviewer.session_epoch != data["epoch"]:
+        if reviewer is None or not reviewer.can_sign_in or reviewer.session_epoch != data["epoch"]:
             raise ValueError("revoked")
     except (BadSignature, ValueError, KeyError, TypeError):
         raise HTTPException(401, "Session expired. Log in at /review/login.") from None
@@ -61,6 +62,21 @@ def principal(request: Request, session: Session = Depends(get_session)) -> Revi
         if not token or not hmac.compare_digest(token, data["csrf"]):
             raise HTTPException(403, "Invalid CSRF token")
     return reviewer
+
+
+def principal(reviewer: Reviewer = Depends(session_principal)) -> Reviewer:
+    if reviewer.role == "client" or reviewer.client_id is not None:
+        raise HTTPException(403, "Staff access required")
+    return reviewer
+
+
+def tenant_client(
+    reviewer: Reviewer = Depends(session_principal), session: Session = Depends(get_session)
+) -> Client:
+    client = session.get(Client, reviewer.client_id) if reviewer.client_id else None
+    if reviewer.role != "client" or client is None or client.status != "active":
+        raise HTTPException(403, "Active client access required")
+    return client
 
 
 def admin(reviewer: Reviewer = Depends(principal)) -> Reviewer:

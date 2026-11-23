@@ -55,8 +55,12 @@ _RULES: dict[str, tuple[tuple[str, str], ...]] = {
         ),
         (
             "totals.tax_exclusive_amount",
-            r"(?:tax\s+exclusive|total\s+before\s+tax)\s*(?:amount)?\s*[:\-]?\s*"
+            r"(?:tax\s+exclusive|total\s+(?:before|excluding)\s+tax)\s*(?:amount)?\s*[:\-]?\s*"
             r"(?:[A-Z]{3}\s*)?([0-9][0-9, .]*\d)",
+        ),
+        (
+            "totals.tax_amount",
+            r"^tax\s+amount\s*:\s*(?:[A-Z]{3}\s*)?(\d+(?:\.\d+)?)\s*$",
         ),
         (
             "totals.tax_inclusive_amount",
@@ -65,7 +69,7 @@ _RULES: dict[str, tuple[tuple[str, str], ...]] = {
         ),
         (
             "totals.payable_amount",
-            r"(?:amount\s+due|amount\s+payable|total\s+payable)\s*[:\-]?\s*"
+            r"(?:total\s+amount\s+due|amount\s+due|amount\s+payable|total\s+payable)\s*[:\-]?\s*"
             r"(?:[A-Z]{3}\s*)?([0-9][0-9, .]*\d)",
         ),
     ),
@@ -476,6 +480,53 @@ def extract_local(
             )
         )
     return tuple(candidates)
+
+
+def complete_digital_invoice_text(
+    lines: tuple[EvidenceLine, ...], fields: dict[str, Field]
+) -> bool:
+    """Require every printed glyph to belong to a supported invoice label or cell."""
+    rules = [(path, re.compile(pattern, re.I)) for path, pattern in _RULES["commercial_invoice"]]
+    cells = [
+        field.provenance.bbox for path, field in fields.items() if path.startswith("line_items[")
+    ]
+    currency = fields["invoice.currency"].value.upper()
+    for line in lines:
+        if " ".join(line.text.casefold().split()) in {
+            "commercial invoice",
+            "description quantity unit price amount",
+            "item quantity rate amount",
+        }:
+            continue
+        source = "".join(char.text for char in line.characters)
+        covered: set[int] = set()
+        for path, rule in rules:
+            field = fields.get(path)
+            if field is None:
+                continue
+            for match in rule.finditer(source):
+                start, end = match.span(1)
+                if line.box_for(start, end) != field.provenance.bbox:
+                    continue
+                if path in {"seller.name", "buyer.name"} and ":" in match[1]:
+                    return False
+                if path.startswith("totals."):
+                    if not re.fullmatch(r"\d+(?:\.\d+)?", match[1]):
+                        return False
+                    prefix = re.search(r"\b([A-Z]{3})\s*$", source[match.start() : start], re.I)
+                    if prefix and prefix[1].upper() != currency:
+                        return False
+                covered.update(range(match.start(), match.end()))
+        for i, char in enumerate(line.characters):
+            if char.text.isspace() or i in covered:
+                continue
+            box = char.bbox
+            if not any(
+                cell.x0 <= box.x0 <= box.x1 <= cell.x1 and cell.y0 <= box.y0 <= box.y1 <= cell.y1
+                for cell in cells
+            ):
+                return False
+    return bool(lines)
 
 
 def _box(boxes: Iterable[BBox]) -> BBox:

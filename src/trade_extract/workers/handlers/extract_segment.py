@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import logging
 from dataclasses import asdict, replace
+from time import perf_counter
 from typing import Any
 
 from sqlalchemy import select
@@ -30,9 +32,12 @@ from trade_extract.services.checks import run_invoice_checks
 from trade_extract.services.decisions import decide_document, effective_policy
 from trade_extract.services.extraction import extract
 from trade_extract.services.progress import report
+from trade_extract.services.readers import TextLayerReader, VisionReader
 from trade_extract.services.readers.paddle import PaddleReader
 from trade_extract.services.segmentation import classify_page
 from trade_extract.services.storage import build_storage
+
+logger = logging.getLogger(__name__)
 
 
 def rehydrate(page: dict[str, Any], image_bytes: bytes | None) -> PageInput:
@@ -154,15 +159,25 @@ def handle(session: Session, task: JobTask, *, settings: Settings, clock: Clock)
                 if len(blob) > settings.provider_max_image_bytes:
                     raise ValueError("conditioned_image_byte_budget_exhausted")
         inputs.append(rehydrate(page, blob))
+    paddle = PaddleReader(settings)
     if identity["document_type"] == "unknown":
-        paddle = PaddleReader(settings)
         classified_inputs = []
         classifications = []
         for page_input in inputs:
             if page_input.is_unreadable or page_input.image is None:
                 classified_inputs.append(page_input)
                 continue
+            started = perf_counter()
             ocr = paddle.inspect(page_input, require_structure=False)
+            logger.info(
+                "classification_ocr_page",
+                extra={
+                    "document_id": identity["id"],
+                    "page_index": page_input.page_index,
+                    "duration_ms": round((perf_counter() - started) * 1000, 1),
+                    "status": ocr.status,
+                },
+            )
             classified_inputs.append(replace(page_input, ocr=ocr))
             text = "\n".join(span.text for span in ocr.spans if span.text.strip())
             result = classify_page(text, min_confidence=settings.segmentation_min_confidence)
@@ -212,6 +227,7 @@ def handle(session: Session, task: JobTask, *, settings: Settings, clock: Clock)
             source=source,
             pages=tuple(inputs),
             segment_id=identity["segment_id"],
+            readers=(TextLayerReader(), paddle, VisionReader()),
             settings=settings,
             progress=lambda stage: report(session, stage),
         )
@@ -224,6 +240,8 @@ def handle(session: Session, task: JobTask, *, settings: Settings, clock: Clock)
         else []
     )
     decision = decide_document(
+        require_manual_review=settings.environment == "production"
+        and not settings.production_auto_pass,
         document_type=identity["document_type"],
         status=status,
         checks=checks,

@@ -42,6 +42,8 @@ class LabelDocument(BaseModel):
     model_config = ConfigDict(extra="forbid")
     document_id: str = Field(min_length=1)
     file: str = Field(min_length=1)
+    page_start: int | None = Field(default=None, ge=0)
+    page_end: int | None = Field(default=None, ge=0)
     document_type: str
     fields: dict[str, LabelField]
     table_rows: dict[str, StrictInt]
@@ -49,6 +51,12 @@ class LabelDocument(BaseModel):
 
     @model_validator(mode="after")
     def valid_schema(self) -> LabelDocument:
+        if (self.page_start is None) != (self.page_end is None) or (
+            self.page_start is not None
+            and self.page_end is not None
+            and self.page_end < self.page_start
+        ):
+            raise ValueError("page bounds must be supplied together, in source order")
         schema = get_schema(self.document_type)
         for path in self.fields:
             if schema.model.field_set.resolve(path) is None:

@@ -496,7 +496,7 @@ def build_result(
     preparation) the story-1 file-count semantics stay.
     """
 
-    job = session.get(Job, submission.job_id)
+    job = jobs_repo.get_by_id(session, submission.job_id, submission.client_id)
     if job is None:
         raise errors.internal_error()
     policy = session.get(Policy, job.policy_id)

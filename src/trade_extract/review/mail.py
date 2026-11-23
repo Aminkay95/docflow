@@ -14,7 +14,7 @@ from trade_extract.config import Settings
 
 logger = logging.getLogger(__name__)
 
-_SUBJECT = "Reset your Trade Extract password"
+_SUBJECT = "Reset your Doc Hover password"
 
 
 class MailDeliveryError(RuntimeError):
@@ -37,7 +37,7 @@ def send_password_reset_email(
     """
 
     body = (
-        "A password reset was requested for your Trade Extract review account.\n\n"
+        "A password reset was requested for your Doc Hover review account.\n\n"
         "Open this link to choose a new password:\n"
         f"{reset_url}\n\n"
         f"The link expires in {settings.password_reset_ttl_minutes} minutes and can be used once.\n"

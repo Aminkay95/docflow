@@ -13,7 +13,7 @@ from types import SimpleNamespace
 import pytest
 from alembic import command
 from alembic.config import Config
-from dotenv import load_dotenv
+from dotenv import dotenv_values
 from fastapi.testclient import TestClient
 from sqlalchemy import Engine, create_engine, select, text
 from sqlalchemy.engine import make_url
@@ -29,11 +29,10 @@ from trade_extract.domain.ids import new_id
 from trade_extract.services.webhooks import encrypt_webhook_secret
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
-load_dotenv(PROJECT_ROOT / ".env")
-
-TEST_DATABASE_URL = os.getenv(
-    "TEST_DATABASE_URL",
-    "postgresql+psycopg://trade:trade@localhost:5432/trade_extract_test",
+TEST_DATABASE_URL = (
+    os.getenv("TEST_DATABASE_URL")
+    or dotenv_values(PROJECT_ROOT / ".env").get("TEST_DATABASE_URL")
+    or "postgresql+psycopg://trade:trade@localhost:5432/trade_extract_test"
 )
 
 _DB_AVAILABLE: bool | None = None

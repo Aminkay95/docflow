@@ -1,0 +1,114 @@
+# Coolify builds both images from the same staging branch. Set the API domain to
+# the same HTTPS origin as DOC_HOVER_STAGING_URL and route it to container port 8000.
+x-environment: &environment
+  ENVIRONMENT: production
+  DATABASE_URL: postgresql+psycopg://doc_hover:${SERVICE_PASSWORD_64_POSTGRES:?}@postgres/doc_hover
+  SECRET_KEY: ${SERVICE_PASSWORD_64_SESSION:?}
+  API_KEY_PEPPER: ${SERVICE_PASSWORD_64_API_KEY:?}
+  STORAGE_BACKEND: filesystem
+  STORAGE_DIR: /app/var/storage
+  BASE_URL: ${DOC_HOVER_STAGING_URL:?}
+  SMTP_HOST: mailpit
+  SMTP_PORT: "1025"
+  SMTP_STARTTLS: "false"
+  WEBHOOK_ALLOW_PRIVATE_TARGETS: "false"
+  MAX_DOCUMENTS_PER_GROUP: "10"
+  MAX_REQUEST_BYTES: "104857600"
+  MAX_PAGES_PER_FILE: "20"
+  MAX_PAGES_PER_SUBMISSION: "50"
+  DATABASE_POOL_SIZE: "3"
+  DATABASE_POOL_MAX_OVERFLOW: "2"
+  PRODUCTION_AUTO_PASS: "false"
+
+x-app: &app
+  init: true
+  restart: unless-stopped
+  security_opt: [no-new-privileges:true]
+  cap_drop: [ALL]
+  stop_grace_period: 130s
+  volumes: [documents:/app/var/storage]
+  depends_on:
+    migrate:
+      condition: service_completed_successfully
+
+x-api-build: &api-build
+  context: .
+  dockerfile: Dockerfile.api
+
+x-worker-build: &worker-build
+  context: .
+  dockerfile: Dockerfile.worker
+
+services:
+  postgres:
+    image: postgres:16
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: doc_hover
+      POSTGRES_USER: doc_hover
+      POSTGRES_PASSWORD: ${SERVICE_PASSWORD_64_POSTGRES:?}
+    volumes: [database:/var/lib/postgresql/data]
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "doc_hover", "-d", "doc_hover"]
+      interval: 5s
+      timeout: 5s
+      retries: 15
+
+  mailpit:
+    image: axllent/mailpit:v1.27.8
+    restart: unless-stopped
+
+  migrate:
+    build: *api-build
+    environment: *environment
+    command: ["sh", "-c", "alembic upgrade head && python scripts/bootstrap.py"]
+    restart: "no"
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  api:
+    <<: *app
+    build: *api-build
+    environment: *environment
+    expose: ["8000"]
+    command: ["uvicorn", "trade_extract.api.app:create_app", "--factory", "--host", "0.0.0.0", "--port", "8000", "--no-access-log"]
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/v1/health/ready', timeout=8)"]
+      interval: 15s
+      timeout: 10s
+      retries: 4
+      start_period: 20s
+
+  worker:
+    <<: *app
+    build: *worker-build
+    environment:
+      <<: *environment
+      PROVIDER: groq
+      GROQ_API_KEY: ${GROQ_API_KEY:?}
+      GROQ_TEXT_MODEL: ${GROQ_TEXT_MODEL:-qwen/qwen3.8-27b}
+      GROQ_VISION_MODEL: ${GROQ_VISION_MODEL:-qwen/qwen3.8-27b}
+      PROVIDER_TIMEOUT_SECONDS: "30"
+      PROVIDER_MAX_ATTEMPTS: "2"
+      STAGE_PROMPTS_ENABLED: "true"
+      OCR_CPU_THREADS: "2"
+      PADDLE_PDX_DISABLE_MODEL_SOURCE_CHECK: "true"
+    volumes: [documents:/app/var/storage, paddlex_cache:/home/appuser/.paddlex]
+    deploy:
+      replicas: ${EXTRACTION_WORKER_REPLICAS:-2}
+      resources:
+        limits:
+          cpus: "2"
+          memory: 4g
+
+  maintenance:
+    <<: *app
+    build: *worker-build
+    environment: *environment
+    command: ["python", "-m", "trade_extract.workers.maintenance"]
+
+volumes:
+  database:
+  documents:
+  paddlex_cache:

@@ -3,6 +3,7 @@ from __future__ import annotations
 from functools import lru_cache
 from pathlib import Path
 from typing import Literal
+from urllib.parse import urlsplit
 
 from pydantic import Field, SecretStr, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -15,7 +16,7 @@ _PLACEHOLDER_MARKERS = (
     "your-secret",
 )
 
-_DEFAULT_MAIL_FROM = "Trade Extract <no-reply@localhost>"
+_DEFAULT_MAIL_FROM = "Doc Hover <no-reply@localhost>"
 
 
 class Settings(BaseSettings):
@@ -168,6 +169,10 @@ class Settings(BaseSettings):
     task_backoff_max_seconds: int = Field(default=300, ge=1)
     retry_after_seconds: int = Field(default=2, ge=1)
 
+    document_retention_hours: float = Field(default=6, gt=0)
+    retention_sweep_seconds: int = Field(default=300, ge=10)
+    production_auto_pass: bool = False
+
     worker_poll_seconds: float = Field(default=1.0, gt=0)
     worker_id: str = ""
     job_max_attempts: int = Field(default=3, ge=1)
@@ -217,6 +222,10 @@ class Settings(BaseSettings):
                 "domain verified in Resend"
             )
         if self.environment == "production":
+            if self.storage_backend == "s3":
+                public_url = urlsplit(self.base_url)
+                if public_url.scheme != "https" or not public_url.hostname:
+                    raise ValueError("BASE_URL must be an HTTPS URL in production")
             _reject_placeholder("SECRET_KEY", self.secret_key)
             _reject_placeholder("API_KEY_PEPPER", self.api_key_pepper)
             if not (self.resend_can_send or self.smtp_host.strip()):

@@ -2,7 +2,17 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from sqlalchemy import CheckConstraint, DateTime, ForeignKey, Index, Integer, Text, func, text
+from sqlalchemy import (
+    CheckConstraint,
+    DateTime,
+    ForeignKey,
+    Index,
+    Integer,
+    Text,
+    UniqueConstraint,
+    func,
+    text,
+)
 from sqlalchemy.orm import Mapped, mapped_column
 
 from trade_extract.db.base import Base
@@ -11,6 +21,7 @@ from trade_extract.db.base import Base
 class Job(Base):
     __tablename__ = "jobs"
     __table_args__ = (
+        UniqueConstraint("id", "client_id", name="uq_jobs_id_client"),
         CheckConstraint(
             "status IN ('queued', 'processing', 'review_required', 'completed', 'failed')",
             name="ck_jobs_status",

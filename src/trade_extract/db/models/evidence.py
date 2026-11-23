@@ -7,6 +7,7 @@ from sqlalchemy import (
     CheckConstraint,
     DateTime,
     ForeignKey,
+    ForeignKeyConstraint,
     Index,
     Text,
     UniqueConstraint,
@@ -52,6 +53,12 @@ class DecisionRecord(Base):
 class ConflictRecord(Base):
     __tablename__ = "conflicts"
     __table_args__ = (
+        ForeignKeyConstraint(
+            ["job_id", "client_id"],
+            ["jobs.id", "jobs.client_id"],
+            name="fk_conflicts_job_tenant",
+            ondelete="CASCADE",
+        ),
         CheckConstraint("status IN ('open','resolved','waived')", name="ck_conflicts_status"),
         Index(
             "ux_conflicts_open_key",

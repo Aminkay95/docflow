@@ -25,6 +25,7 @@ def decide_document(
     config: dict[str, Any],
     open_conflicts: list[str] | None = None,
     has_unreadable_page: bool = False,
+    require_manual_review: bool = False,
 ) -> dict[str, Any]:
     policy, valid = effective_policy(config)
     reasons = [
@@ -39,6 +40,8 @@ def decide_document(
         value = status
         reasons.append("extraction_failed" if status == "failed" else "unreadable")
     else:
+        if require_manual_review:
+            reasons.append("policy:deployment_requires_review")
         if status != "extracted":
             reasons.append("extraction:not_complete")
         if document_type != "commercial_invoice" or policy.review_depth == "full":

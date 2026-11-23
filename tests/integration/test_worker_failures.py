@@ -421,7 +421,7 @@ def test_worker_loop_survives_a_claim_error(api: ApiHarness, monkeypatch) -> Non
         raise KeyboardInterrupt
 
     monkeypatch.setattr(runner, "run_once", flaky)
-    monkeypatch.setattr(runner.time, "sleep", lambda *_: None)
+    api.settings.worker_poll_seconds = 0.001
 
     runner.run_forever(
         settings=api.settings,

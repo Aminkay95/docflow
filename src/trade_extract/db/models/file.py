@@ -8,9 +8,11 @@ from sqlalchemy import (
     CheckConstraint,
     DateTime,
     ForeignKey,
+    ForeignKeyConstraint,
     Index,
     Integer,
     Text,
+    UniqueConstraint,
     func,
     text,
 )
@@ -22,6 +24,13 @@ from trade_extract.db.base import Base
 class File(Base):
     __tablename__ = "files"
     __table_args__ = (
+        ForeignKeyConstraint(
+            ["submission_id", "job_id", "client_id"],
+            ["submissions.id", "submissions.job_id", "submissions.client_id"],
+            name="fk_files_submission_tenant",
+            ondelete="CASCADE",
+        ),
+        UniqueConstraint("id", "job_id", "client_id", name="uq_files_id_job_client"),
         CheckConstraint("size_bytes > 0", name="ck_files_size"),
         CheckConstraint(
             "page_count IS NULL OR page_count > 0",

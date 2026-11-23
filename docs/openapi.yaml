@@ -1,6 +1,6 @@
 openapi: 3.1.0
 info:
-  title: Trade Extract API
+  title: Doc Hover API
   version: 1.0.0
   description: |
     Provenance-first asynchronous extraction API for Kenyan trade documents.
@@ -12,7 +12,7 @@ info:
     Authentication is a bearer API key. Completion is delivered by webhook with polling as a
     fallback. Every error uses the same envelope.
   contact:
-    name: Trade Extract
+    name: Doc Hover
     url: https://trade-extract.example
   license:
     name: Proprietary
@@ -384,7 +384,7 @@ paths:
       security: []
       responses:
         "200":
-          description: Database, storage and active policy are available.
+          description: The database is at the required migration, and storage and an active policy are available.
           content:
             application/json:
               schema:
@@ -501,7 +501,7 @@ components:
           schema:
             $ref: "#/components/schemas/ErrorEnvelope"
     ServiceUnavailable:
-      description: Database, storage or maintenance outage.
+      description: Database, schema, storage or maintenance outage.
       headers:
         Retry-After:
           schema:

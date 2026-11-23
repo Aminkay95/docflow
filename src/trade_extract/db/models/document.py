@@ -8,6 +8,7 @@ from sqlalchemy import (
     CheckConstraint,
     DateTime,
     ForeignKey,
+    ForeignKeyConstraint,
     Index,
     Integer,
     Text,
@@ -24,6 +25,24 @@ from trade_extract.db.base import Base
 class Document(Base):
     __tablename__ = "documents"
     __table_args__ = (
+        ForeignKeyConstraint(
+            ["segment_id", "file_id"],
+            ["segments.id", "segments.file_id"],
+            name="fk_documents_segment_file",
+            ondelete="CASCADE",
+        ),
+        ForeignKeyConstraint(
+            ["file_id", "job_id", "client_id"],
+            ["files.id", "files.job_id", "files.client_id"],
+            name="fk_documents_file_tenant",
+            ondelete="CASCADE",
+        ),
+        ForeignKeyConstraint(
+            ["submission_id", "job_id", "client_id"],
+            ["submissions.id", "submissions.job_id", "submissions.client_id"],
+            name="fk_documents_submission_tenant",
+            ondelete="CASCADE",
+        ),
         UniqueConstraint("job_id", "idempotency_key", name="uq_documents_job_idempotency"),
         UniqueConstraint("job_id", "document_hash", name="uq_documents_job_hash"),
         CheckConstraint(

@@ -120,13 +120,18 @@ class S3Storage:
         region: str,
     ) -> None:
         import boto3
+        from botocore.config import Config
 
         self.bucket = bucket
         self.client = boto3.client(
             "s3",
             endpoint_url=endpoint_url or None,
             region_name=region or None,
+            config=Config(connect_timeout=3, read_timeout=10, retries={"total_max_attempts": 2}),
         )
+
+    def check_ready(self) -> None:
+        self.client.head_bucket(Bucket=self.bucket)
 
     def put(self, key: str, stream: BinaryIO, content_type: str) -> None:
         self.client.upload_fileobj(
@@ -144,23 +149,31 @@ class S3Storage:
         return response["Body"]
 
     def delete(self, key: str) -> None:
-        self.client.delete_object(Bucket=self.bucket, Key=key)
+        self._delete_versions(key, exact=True)
 
     def delete_prefix(self, prefix: str) -> int:
-        deleted = 0
+        if not prefix or not prefix.endswith("/"):
+            raise ValueError("S3 deletion requires a specific directory prefix")
+        return self._delete_versions(prefix, exact=False)
+
+    def _delete_versions(self, prefix: str, *, exact: bool) -> int:
         paginator = self.client.get_paginator("list_object_versions")
-        for page in paginator.paginate(Bucket=self.bucket, Prefix=prefix):
-            for item in page.get("Versions", []):
-                self.client.delete_object(
-                    Bucket=self.bucket, Key=item["Key"], VersionId=item["VersionId"]
-                )
-                deleted += 1
-            for item in page.get("DeleteMarkers", []):
-                self.client.delete_object(
-                    Bucket=self.bucket, Key=item["Key"], VersionId=item["VersionId"]
-                )
-                deleted += 1
-        return deleted
+        # Finish listing before deleting. Removing the markers during pagination can
+        # invalidate the cursor for some S3-compatible backends.
+        objects = [
+            {"Key": item["Key"], "VersionId": item["VersionId"]}
+            for page in paginator.paginate(Bucket=self.bucket, Prefix=prefix)
+            for item in [*page.get("Versions", []), *page.get("DeleteMarkers", [])]
+            if not exact or item["Key"] == prefix
+        ]
+        for offset in range(0, len(objects), 1000):
+            result = self.client.delete_objects(
+                Bucket=self.bucket,
+                Delete={"Objects": objects[offset : offset + 1000], "Quiet": True},
+            )
+            if result.get("Errors"):
+                raise RuntimeError("S3 prefix deletion was incomplete")
+        return len(objects)
 
     def presigned_get(self, key: str, expires_in: int) -> str:
         return self.client.generate_presigned_url(

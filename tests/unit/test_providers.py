@@ -18,7 +18,7 @@ def request():
 
 
 @pytest.mark.parametrize("status,count", [(400, 1), (429, 3), (503, 3)])
-def test_http_retry_and_content_free_attempts(status, count):
+def test_http_retry_and_content_free_attempts(status, count, caplog):
     attempts = []
     calls = []
 
@@ -37,6 +37,9 @@ def test_http_retry_and_content_free_attempts(status, count):
         provider.text_reason(request())
     assert len(calls) == len(attempts) == count
     assert all("private" not in str(asdict(attempt)) for attempt in attempts)
+    errors = [vars(record) for record in caplog.records if record.msg == "provider_http_error"]
+    assert len(errors) == count
+    assert all("sensitive response" not in str(error) for error in errors)
     assert "private-key" not in repr(provider.settings)
 
 

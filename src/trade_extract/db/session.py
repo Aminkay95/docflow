@@ -9,6 +9,7 @@ from trade_extract.config import Settings
 def make_engine(settings: Settings) -> Engine:
     kwargs: dict[str, object] = {
         "pool_pre_ping": True,
+        "hide_parameters": True,
         "future": True,
     }
     if not settings.database_url.startswith("sqlite"):

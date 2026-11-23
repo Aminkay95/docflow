@@ -187,7 +187,7 @@ def digital_grids(page: PageInput, spec: SchemaSpec, row_limit: int) -> tuple[Di
         edges.append(min(1.0, columns[-1][1].x1 + 0.05))
         if any(right <= left for left, right in zip(edges, edges[1:], strict=False)):
             continue
-        rows = []
+        rows: list[TableRow] = []
         last_bottom = line.bbox.y1
         for source in positioned:
             if source.bbox.y0 <= line.bbox.y1:

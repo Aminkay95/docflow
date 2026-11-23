@@ -91,26 +91,22 @@ def register_exception_handlers(app: FastAPI) -> None:
         if (
             exc.status_code == 401
             and request.method in ("GET", "HEAD")
-            and request.url.path.startswith("/review")
+            and request.url.path.startswith(("/review", "/workspace"))
         ):
             return HTMLResponse(
                 status_code=401,
                 content=(
                     '<!doctype html><html lang="en"><head><meta charset="utf-8">'
                     '<meta name="viewport" content="width=device-width, initial-scale=1">'
-                    "<title>Sign in required · Trade Extract</title>"
+                    "<title>Sign in required · Doc Hover</title>"
+                    '<link rel="icon" href="/review/static/doc-hover-mark.png" type="image/png">'
                     '<link rel="stylesheet" href="/review/static/review.css"></head>'
                     '<body class="login-body"><main class="login-shell">'
                     '<section class="login-card login-card-compact">'
                     '<a class="login-brand" href="/review">'
-                    '<span class="brand-mark" aria-hidden="true">'
-                    '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" '
-                    'stroke="currentColor" stroke-width="2" stroke-linecap="round" '
-                    'stroke-linejoin="round"><path d="M6 22a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h8'
-                    'a2.4 2.4 0 0 1 1.704.706l3.588 3.588A2.4 2.4 0 0 1 20 8v12a2 2 0 0 1-2 2z"/>'
-                    '<path d="M14 2v5a1 1 0 0 0 1 1h5"/></svg></span>'
-                    '<span class="brand-copy"><span class="brand-title">Trade Extract</span>'
-                    '<span class="brand-subtitle">Review console</span></span></a>'
+                    '<img class="brand-logo" src="/review/static/doc-hover-logo.png" '
+                    'alt="Doc Hover" width="129" height="32">'
+                    '<span class="brand-subtitle">Review console</span></a>'
                     '<div class="login-heading"><h1>Sign in required</h1>'
                     '<p class="login-lead">Your review session has expired or '
                     "you are not signed in.</p></div>"

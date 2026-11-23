@@ -15,6 +15,8 @@ from trade_extract.domain.clock import Clock, SystemClock
 from trade_extract.logging import configure_logging, get_logger
 from trade_extract.services import queue as queue_service
 from trade_extract.services import webhooks as webhook_service
+from trade_extract.services.retention import purge_due_files
+from trade_extract.services.storage import build_storage
 
 logger = get_logger("trade_extract.maintenance")
 
@@ -131,9 +133,22 @@ def run_forever(
 ) -> None:
     configure_logging()
     clock = clock or SystemClock()
+    storage = build_storage(settings)
+    next_sweep = 0.0
     logger.info("maintenance_started")
     while True:
         try:
+            if settings.environment == "production" and time.monotonic() >= next_sweep:
+                purged = purge_due_files(
+                    session_factory_,
+                    storage,
+                    now=clock.now(),
+                    retention_hours=settings.document_retention_hours,
+                )
+                if purged:
+                    logger.info("retention_files_purged", extra={"count": purged})
+                if purged < 20:
+                    next_sweep = time.monotonic() + settings.retention_sweep_seconds
             processed = run_webhook_once(
                 settings=settings,
                 session_factory_=session_factory_,

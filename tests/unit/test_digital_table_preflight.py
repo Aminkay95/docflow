@@ -147,7 +147,10 @@ def test_ocr_runs_only_when_digital_table_preflight_cannot_confirm_layout(
         assert calls == [(0, True)]
 
 
-def test_item_rate_invoice_grid_is_read_without_ocr(monkeypatch):
+@pytest.mark.parametrize(
+    "case", ["table_only", "complete", "extra_field", "mismatched_total", "provider_priority"]
+)
+def test_item_rate_invoice_grid_is_read_without_ocr(monkeypatch, case):
     from trade_extract.schemas.registry import get_schema
     from trade_extract.services.table_layout import digital_grids
 
@@ -163,14 +166,44 @@ def test_item_rate_invoice_grid_is_read_without_ocr(monkeypatch):
             )
         characters.append(TextCharacter("\n", BBox(x0=0, x1=0.001, y0=y, y1=y + 0.008)))
 
-    add_line((("INVOICE ", 0.04),), 0.05)
+    add_line((("COMMERCIAL INVOICE", 0.04),), 0.03)
+    if case != "table_only":
+        for i, text in enumerate(
+            (
+                "Invoice Number: INV123",
+                "Issue Date: 2026-11-10",
+                "Seller: Shipment Services Ltd",
+                "Buyer: Example Logistics Ltd",
+                "Currency: USD",
+            )
+        ):
+            add_line(((text, 0.04),), 0.06 + i * 0.02)
     add_line((("Item ", 0.04), ("Quantity ", 0.60), ("Rate ", 0.76), ("Amount", 0.87)), 0.20)
+    price = "$500.00" if case == "table_only" else "500.00"
     add_line(
-        (("Example shipment service ", 0.04), ("1 ", 0.60), ("$500.00 ", 0.74), ("$500.00", 0.87)),
+        (("Example shipment service ", 0.04), ("1 ", 0.60), (f"{price} ", 0.74), (price, 0.87)),
         0.22,
     )
+    if case != "table_only":
+        due = "505.00" if case == "mismatched_total" else "500.00"
+        for i, text in enumerate(
+            (
+                "Subtotal: USD 500.00",
+                "Total Excluding Tax: USD 500.00",
+                "Tax Amount: USD 0.00",
+                "Total Including Tax: USD 500.00",
+                f"Total Amount Due: USD {due}",
+            )
+        ):
+            add_line(((text, 0.40),), 0.40 + i * 0.025)
+    if case == "extra_field":
+        add_line((("Payment terms: Within 30 days", 0.04),), 0.70)
     page = replace(conditioned_page(), characters=tuple(characters))
-    settings = Settings(provider="mock", routing_min_text_characters=20)
+    settings = Settings(
+        provider="mock",
+        routing_min_text_characters=20,
+        llm_extraction_priority=case == "provider_priority",
+    )
     grids = digital_grids(page, get_schema("commercial_invoice"), 100)
     assert len(grids) == 1
     assert grids[0].columns == ("description", "quantity", "unit_price", "line_extension_amount")
@@ -181,8 +214,9 @@ def test_item_rate_invoice_grid_is_read_without_ocr(monkeypatch):
 
     monkeypatch.setattr(PaddleReader, "inspect", unexpected_ocr)
     source, _, _ = fixture("commercial_invoice")
+    provider = Scripted({})
     result = extract(
-        Scripted({}),
+        provider,
         document_type="commercial_invoice",
         source=source,
         pages=(page,),
@@ -193,3 +227,11 @@ def test_item_rate_invoice_grid_is_read_without_ocr(monkeypatch):
     assert result.document is not None
     assert result.document.fields["line_items[0].description"].value == "Example shipment service"
     assert result.document.fields["line_items[0].line_extension_amount"].value == "500.00"
+    if case == "complete":
+        assert not provider.requests
+        assert "provider_skipped_local_complete_invoice" in result.diagnostics
+        assert result.document.fields["totals.tax_amount"].value == "0.00"
+        assert result.document.tables["line_items"].row_count_extracted == 1
+    else:
+        assert provider.requests
+        assert "provider_skipped_local_complete_invoice" not in result.diagnostics

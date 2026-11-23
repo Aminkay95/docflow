@@ -417,7 +417,7 @@ document.addEventListener('click', async event => {
   if (button.dataset.finishJob) {
     const status = query('[data-finish-status]');
     setBusy(button, true, busyLabel(button, 'Sending…'));
-    if (status) status.textContent = 'Sending reviewed result to the terminal…';
+    if (status) status.textContent = 'Preparing reviewed JSON…';
     try {
       const response = await fetchWithTimeout(button.dataset.finishJob, {
         method: 'POST',
@@ -438,17 +438,17 @@ document.addEventListener('click', async event => {
       }
       const preview = query('[data-result-json]');
       if (preview) preview.textContent = JSON.stringify(body, null, 2);
-      if (status) status.textContent = 'Reviewed JSON sent to the API terminal.';
+      if (status) status.textContent = 'Reviewed JSON is ready.';
       if (button.classList && typeof button.classList.remove === 'function') {
         button.classList.remove('is-busy');
       }
       const label = typeof button.querySelector === 'function'
         ? button.querySelector('span')
         : null;
-      if (label) label.textContent = 'Done — sent to terminal';
-      else button.textContent = 'Done — sent to terminal';
+      if (label) label.textContent = 'Done';
+      else button.textContent = 'Done';
       button.disabled = true;
-      feedback('Reviewed JSON sent to the API terminal.', 'success');
+      feedback('Reviewed JSON is ready.', 'success');
     } catch (error) {
       const message = timedOut(error)
         ? 'The request took too long. Try again.'

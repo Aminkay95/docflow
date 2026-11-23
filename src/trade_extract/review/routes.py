@@ -35,7 +35,14 @@ from trade_extract.db.repositories.evidence import conflicts_for, review_counts
 from trade_extract.domain import errors
 from trade_extract.domain.clock import Clock
 from trade_extract.domain.ids import new_id
-from trade_extract.review.auth import admin, password_hash, principal, signer, verify_password
+from trade_extract.review.auth import (
+    admin,
+    password_hash,
+    principal,
+    session_principal,
+    signer,
+    verify_password,
+)
 from trade_extract.review.line_items import document_line_items
 from trade_extract.review.mail import send_password_reset_email
 from trade_extract.review.progress import project as job_progress
@@ -413,10 +420,9 @@ def forgot_password(
     reviewer = session.scalar(
         select(Reviewer).where(
             func.lower(Reviewer.email) == email.strip().lower(),
-            Reviewer.is_active.is_(True),
         )
     )
-    if reviewer is not None:
+    if reviewer is not None and reviewer.can_sign_in:
         issue_password_reset(request, session, reviewer, request.app.state.clock.now())
     return page(sent=True)
 
@@ -490,7 +496,7 @@ def reset_password(
             error=f"Use at least {settings.password_reset_min_length} characters.",
         )
     reviewer = session.get(Reviewer, row.reviewer_id)
-    if reviewer is None or not reviewer.is_active:
+    if reviewer is None or not reviewer.can_sign_in:
         return auth_response(
             request,
             "reset_password.html",
@@ -554,7 +560,7 @@ def login(
     )
     if (
         reviewer is None
-        or not reviewer.is_active
+        or not reviewer.can_sign_in
         or not verify_password(password, reviewer.password_hash)
     ):
         return login_response(
@@ -565,7 +571,9 @@ def login(
         )
     reviewer.last_login_at = now
     session.commit()
-    response = RedirectResponse("/review", status_code=303)
+    response = RedirectResponse(
+        "/workspace" if reviewer.role == "client" else "/review", status_code=303
+    )
     response.delete_cookie("review_login")
     response.set_cookie(
         "review_session",
@@ -590,7 +598,7 @@ def login(
 @router.post("/logout-all")
 def logout(
     request: Request,
-    reviewer: Reviewer = Depends(principal),
+    reviewer: Reviewer = Depends(session_principal),
     session: Session = Depends(get_session),
 ) -> Response:
     if request.url.path.endswith("logout-all"):
@@ -1008,6 +1016,7 @@ def job_detail(
 @router.post("/jobs/{job_id}/done")
 def finish_job(
     job_id: str,
+    request: Request,
     reviewer: Reviewer = Depends(principal),
     session: Session = Depends(get_session),
 ) -> JSONResponse:
@@ -1045,7 +1054,8 @@ def finish_job(
         raise HTTPException(409, "Finish processing and resolve all reviews and conflicts first.")
     result = job_result(session, job.id, job.client_id)
     session.commit()
-    emit_terminal_result(result, phase="review.result")
+    if request.app.state.settings.environment != "production":
+        emit_terminal_result(result, phase="review.result")
     return JSONResponse(result, headers={"Cache-Control": "no-store"})
 
 
@@ -1082,9 +1092,14 @@ def team(
     session: Session = Depends(get_session),
 ) -> Response:
     statement, pagination = paginate(
-        select(Reviewer).order_by(Reviewer.display_name, Reviewer.username),
+        select(Reviewer)
+        .where(Reviewer.client_id.is_(None))
+        .order_by(Reviewer.display_name, Reviewer.username),
         page,
-        session.scalar(select(func.count()).select_from(Reviewer)) or 0,
+        session.scalar(
+            select(func.count()).select_from(Reviewer).where(Reviewer.client_id.is_(None))
+        )
+        or 0,
     )
     members = list(session.scalars(statement))
     assigned = dict(

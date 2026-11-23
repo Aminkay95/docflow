@@ -267,6 +267,69 @@ def test_image_only_file_is_one_unknown_document(api: ApiHarness) -> None:
     assert page.text_layer in ("", None)
 
 
+def test_scan_classification_reuses_recognized_text_for_table_structure(api, monkeypatch):
+    import io
+    import sys
+    from types import SimpleNamespace
+
+    from PIL import ImageDraw
+
+    from trade_extract.providers.mock import MockProvider
+    from trade_extract.services.readers import paddle
+    from trade_extract.workers.handlers import extract_segment
+
+    image = Image.new("RGB", (800, 1000), "white")
+    draw = ImageDraw.Draw(image)
+    for y in range(100, 900, 40):
+        draw.line((100, y, 700, y), fill="black", width=3)
+    stream = io.BytesIO()
+    image.save(stream, format="PNG")
+
+    raw = {"rec_texts": ["COMMERCIAL INVOICE"], "rec_polys": [[40, 40, 240, 65]]}
+    calls = []
+
+    class OCREngine:
+        def predict(self, image):
+            calls.append("recognize")
+            return iter([raw])
+
+    class TableEngine:
+        def predict(self, image, *, overall_ocr_res, **kwargs):
+            assert overall_ocr_res is raw
+            calls.append("structure")
+            return iter([])
+
+    monkeypatch.setitem(
+        sys.modules,
+        "paddleocr",
+        SimpleNamespace(
+            PaddleOCR=OCREngine,
+            TableRecognitionPipelineV2=TableEngine,
+        ),
+    )
+    monkeypatch.setattr(paddle, "_OCR_ENGINE", OCREngine())
+    monkeypatch.setattr(paddle, "_TABLE_ENGINE", TableEngine())
+    monkeypatch.setattr(extract_segment, "make_provider", lambda *args, **kwargs: MockProvider())
+    api.settings.provider = "groq"
+    api.settings.conditioning_min_blur = 10
+
+    accepted = post_files(
+        api,
+        job_ref="SCAN-OCR-REUSE",
+        files=images(
+            stream.getvalue(),
+            "invoice.png",
+            "image/png",
+        ),
+    )
+    assert accepted.status_code == 202
+    drain(api)
+
+    document = poll(api, accepted.json()["result_id"])["documents"][0]
+    assert document["document_type"] == "commercial_invoice"
+    assert calls == ["recognize", "structure"]
+
+
 def test_multiframe_tiff_is_three_pages_and_one_unknown_segment(api: ApiHarness) -> None:
     accepted = post_files(
         api,
@@ -611,7 +674,7 @@ def test_document_filter_returns_one_or_none(api: ApiHarness) -> None:
 
 
 def test_duplicate_file_is_not_relisted_for_the_new_submission(api: ApiHarness) -> None:
-    payload = make_pdf([["COMMERCIAL INVOICE"]])
+    payload = make_pdf([["PACKING LIST", "Existing goods"]])
     first = post_files(api, job_ref="BL-DUPLICATE-SEG", files=pdfs(payload))
     assert first.status_code == 202, first.text
     drain(api)
@@ -629,7 +692,7 @@ def test_duplicate_file_is_not_relisted_for_the_new_submission(api: ApiHarness) 
 
 
 def test_duplicate_parts_count_toward_progress(api: ApiHarness) -> None:
-    duplicate_payload = make_pdf([["COMMERCIAL INVOICE"]])
+    duplicate_payload = make_pdf([["PACKING LIST", "Existing goods"]])
     first = post_files(api, job_ref="BL-DUPLICATE-PROGRESS", files=pdfs(duplicate_payload))
     assert first.status_code == 202, first.text
     drain(api)
@@ -657,7 +720,7 @@ def test_segmentation_floor_is_read_from_settings_at_a_non_default_value(
     payload = make_pdf(
         [
             [
-                "COMMERCIAL INVOICE",
+                "COMMERCIAL INVOICE COPY",
                 "Reference",
                 "Document",
                 "Page one",

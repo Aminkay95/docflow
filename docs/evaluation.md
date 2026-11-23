@@ -12,9 +12,9 @@ samples are smoke tests only and must not be reported as accuracy evidence.
 
 ## Upload-to-review latency
 
-The document target is at least 95% of uploads returning a typed extraction with
-fields in under 120 seconds, including upload, queueing, and finalization. Run on
-a migrated test stack with ten workers and a test client key in
+The release target is every document in each ten-concurrent run returning a typed
+extraction with fields in under 120 seconds, including upload, queueing, and finalization.
+Run on a migrated test stack with ten workers and a test client key in
 `EXTRACTION_BENCHMARK_API_KEY`. Use representative, filled documents, with at
 least 20 samples per cohort. Measure digital PDFs and scans separately, first with
 `--concurrency 1` and then with `--concurrency 10`.

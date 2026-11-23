@@ -11,6 +11,7 @@ from uuid import uuid4
 
 import httpx
 
+TARGET_SECONDS = 120
 
 async def measure(client: httpx.AsyncClient, path: Path, timeout: float) -> dict:
     started = perf_counter()
@@ -52,7 +53,7 @@ async def measure(client: httpx.AsyncClient, path: Path, timeout: float) -> dict
         result["status"] = f"http_{exc.response.status_code}"
     except httpx.RequestError:
         result["status"] = "connection_error"
-    result["seconds"] = round(perf_counter() - started, 3)
+    result["seconds"] = perf_counter() - started
     return result
 
 
@@ -78,29 +79,38 @@ async def benchmark(args: argparse.Namespace, key: str) -> dict:
     ]
     successful.sort()
     p95 = successful[math.ceil(len(successful) * 0.95) - 1] if successful else None
-    under_target = sum(seconds < 120 for seconds in successful)
+    under_target = sum(seconds < TARGET_SECONDS for seconds in successful)
     return {
         "cohort": args.cohort,
         "concurrency": args.concurrency,
         "submitted": len(results),
         "successful": len(successful),
-        "p95_seconds_successful": p95,
+        "p95_seconds_successful": round(p95, 3) if p95 is not None else None,
         "under_120_seconds": under_target,
-        "target_met": under_target / len(results) >= 0.95,
-        "results": results,
+        "target_met": bool(results) and under_target == len(results),
+        "results": [{**result, "seconds": round(result["seconds"], 3)} for result in results],
     }
 
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--url", default="http://localhost:8000")
-    parser.add_argument("--cohort", choices=("digital", "scan"), required=True)
+    parser.add_argument("--cohort", choices=("digital", "scan", "mixed"), required=True)
     parser.add_argument("--concurrency", type=int, choices=(1, 10), required=True)
     parser.add_argument("--timeout", type=float, default=300)
     parser.add_argument("files", nargs="+", type=Path)
     args = parser.parse_args()
-    if not math.isfinite(args.timeout) or args.timeout < 120:
-        parser.error("--timeout must be finite and at least 120 seconds")
+    if not math.isfinite(args.timeout) or args.timeout < TARGET_SECONDS:
+        parser.error(f"--timeout must be finite and at least {TARGET_SECONDS} seconds")
+    try:
+        url = httpx.URL(args.url)
+    except httpx.InvalidURL as exc:
+        parser.error(f"invalid benchmark URL: {exc}")
+    if not url.host or not (
+        url.scheme == "https"
+        or (url.scheme == "http" and url.host in {"localhost", "127.0.0.1", "::1"})
+    ):
+        parser.error("use an HTTPS benchmark URL or a local HTTP URL")
     if len(args.files) < args.concurrency:
         parser.error("provide at least as many PDFs as concurrent uploads")
     if any(not path.is_file() or path.suffix.lower() != ".pdf" for path in args.files):

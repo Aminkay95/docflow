@@ -1,6 +1,11 @@
-# Trade Extract
+# Doc Hover
 
 Provenance-first asynchronous extraction API for Kenyan trade documents.
+
+## Deploy and verify
+
+See [the production release runbook](docs/production-release.md) for the production
+Compose file, customer workspaces, and the performance and accuracy checks.
 
 ## Local development
 
@@ -75,7 +80,7 @@ CPU and memory. Apply the configured count to a running Compose stack with
 
 Set `RESEND_API_KEY` to a key with receiving access, `EMAIL_INTAKE_ADDRESS` to
 the pilot address on a Resend receiving domain, and `EMAIL_INTAKE_CLIENT_SLUG`
-to the active Trade Extract client that owns that address.
+to the active Doc Hover client that owns that address.
 
 In Resend, register the public HTTPS URL ending in
 `/v1/webhooks/resend/inbound` for the `email.received` event. Save its signing

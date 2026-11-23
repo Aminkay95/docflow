@@ -2,7 +2,18 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from sqlalchemy import CheckConstraint, DateTime, ForeignKey, Index, Integer, Text, func, text
+from sqlalchemy import (
+    CheckConstraint,
+    DateTime,
+    ForeignKey,
+    ForeignKeyConstraint,
+    Index,
+    Integer,
+    Text,
+    UniqueConstraint,
+    func,
+    text,
+)
 from sqlalchemy.orm import Mapped, mapped_column
 
 from trade_extract.db.base import Base
@@ -11,6 +22,13 @@ from trade_extract.db.base import Base
 class Submission(Base):
     __tablename__ = "submissions"
     __table_args__ = (
+        ForeignKeyConstraint(
+            ["job_id", "client_id"],
+            ["jobs.id", "jobs.client_id"],
+            name="fk_submissions_job_tenant",
+            ondelete="CASCADE",
+        ),
+        UniqueConstraint("id", "job_id", "client_id", name="uq_submissions_id_job_client"),
         CheckConstraint(
             "status IN ('queued', 'processing', 'completed', 'failed')",
             name="ck_submissions_status",

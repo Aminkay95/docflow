@@ -17,7 +17,7 @@ def custom_openapi(app: FastAPI) -> dict[str, Any]:
         return app.openapi_schema
 
     schema = get_openapi(
-        title="Trade Extract API",
+        title=app.title,
         version="1.0.0",
         description=(
             "Provenance-first asynchronous extraction API for Kenyan trade documents.\n\n"
