@@ -104,7 +104,7 @@ services:
 
   maintenance:
     <<: *app
-    build: *worker-build
+    build: *api-build
     environment: *environment
     command: ["python", "-m", "trade_extract.workers.maintenance"]
 
