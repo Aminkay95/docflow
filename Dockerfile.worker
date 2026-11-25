@@ -27,7 +27,8 @@ RUN uv sync --frozen --no-dev --no-editable --extra conditioning --extra ocr --e
 
 ENV PATH="/opt/doc-hover-worker-venv/bin:$PATH"
 
-RUN useradd --create-home --uid 10001 appuser \
+RUN if ! id appuser >/dev/null 2>&1; then useradd --create-home --uid 10001 appuser; fi \
+    && test "$(id -u appuser)" = 10001 \
     && mkdir -p /app/var/storage /home/appuser/.paddlex /home/appuser/.paddleocr \
     && chown -R appuser:appuser /app/var /home/appuser
 USER appuser
